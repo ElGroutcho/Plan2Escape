@@ -1,0 +1,3707 @@
+<!doctype html>
+<html lang="fr" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Optitrip — Planificateur de Voyage IA Sur Mesure</title>
+    <meta name="description" content="Créez votre itinéraire de voyage personnalisé en quelques secondes grâce à l'IA Gemini." />
+    <meta property="og:title" content="Optitrip — Planificateur de Voyage IA Sur Mesure" />
+    <meta property="og:description" content="Créez votre itinéraire de voyage personnalisé en quelques secondes grâce à l'IA Gemini." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              slate: {
+                950: '#020617',
+                900: '#0f172a',
+                800: '#1e293b',
+                700: '#334155',
+              },
+              sky: {
+                400: '#38bdf8',
+                500: '#0ea5e9',
+                600: '#0284c7',
+              }
+            }
+          }
+        }
+      }
+    </script>
+
+    <!-- MapLibre GL JS & CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" />
+    <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- SheetJS (xlsx) for Excel Export -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+    <style>
+      /* Custom map styling & smooth dark theme touches */
+      .maplibregl-popup-content {
+        background-color: #0f172a !important;
+        color: #f8fafc !important;
+        border: 1px solid #1e293b !important;
+        border-radius: 0.75rem !important;
+        padding: 12px 16px !important;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6) !important;
+      }
+      .maplibregl-popup-anchor-top .maplibregl-popup-tip { border-bottom-color: #0f172a !important; }
+      .maplibregl-popup-anchor-bottom .maplibregl-popup-tip { border-top-color: #0f172a !important; }
+      .maplibregl-popup-anchor-left .maplibregl-popup-tip { border-right-color: #0f172a !important; }
+      .maplibregl-popup-anchor-right .maplibregl-popup-tip { border-left-color: #0f172a !important; }
+      .maplibregl-popup-close-button {
+        color: #94a3b8 !important;
+        padding: 4px 8px !important;
+      }
+      .maplibregl-popup-close-button:hover {
+        color: #f8fafc !important;
+      }
+      .custom-marker {
+        cursor: pointer;
+        transition: transform 0.2s ease;
+      }
+      .custom-marker:hover {
+        transform: scale(1.15);
+      }
+    </style>
+  </head>
+  <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased selection:bg-sky-500 selection:text-white">
+
+    <!-- Header Navigation -->
+    <header class="border-b border-slate-800 bg-slate-950/80 backdrop-blur sticky top-0 z-40">
+      <div class="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+        <div class="flex items-center space-x-3 cursor-pointer" onclick="handleNewSearch()">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-600 to-sky-400 flex items-center justify-center shadow-lg shadow-sky-500/20">
+            <i data-lucide="compass" class="w-6 h-6 text-white"></i>
+          </div>
+          <div>
+            <span class="text-xl font-bold tracking-tight text-white flex items-center gap-1.5">
+              Optitrip
+            </span>
+          </div>
+        </div>
+
+        <div class="flex items-center space-x-3">
+          <!-- Saved Trips Modal Trigger -->
+          <button
+            id="savedTripsHeaderBtn"
+            onclick="toggleSavedTripsModal(true)"
+            type="button"
+            class="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-slate-800 bg-slate-900 text-slate-300 hover:border-slate-700 hover:text-white transition shadow-sm cursor-pointer"
+            title="Consulter mes voyages sauvegardés"
+          >
+            <i data-lucide="bookmark" class="w-3.5 h-3.5 text-amber-400"></i>
+            <span>Mes Voyages (<span id="savedTripsCount">0</span>)</span>
+          </button>
+
+          <!-- Return to search button if on dashboard -->
+          <button
+            id="headerNewSearchBtn"
+            onclick="handleNewSearch()"
+            type="button"
+            class="hidden items-center gap-2 px-3 py-1.5 text-xs rounded-lg bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 border border-sky-500/30 transition font-medium"
+          >
+            <i data-lucide="arrow-left" class="w-4 h-4"></i>
+            <span>Nouvelle Recherche</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-8">
+
+      <!-- Global Error Notification Banner -->
+      <div id="errorBanner" class="hidden mb-8 p-4 sm:p-5 rounded-2xl bg-red-950/40 border border-red-800/80 text-red-200">
+        <div class="flex items-start gap-3.5">
+          <div class="p-2 rounded-xl bg-red-900/50 text-red-400 shrink-0">
+            <i data-lucide="alert-circle" class="w-6 h-6"></i>
+          </div>
+          <div class="flex-1">
+            <h3 class="font-semibold text-white text-base">Erreur lors de la génération</h3>
+            <p id="errorMessage" class="text-sm text-red-300 mt-1 leading-relaxed">Une anomalie est survenue.</p>
+            <div class="mt-4 flex flex-wrap gap-3">
+              <button
+                id="errorRetryBtn"
+                onclick="retryGeneration()"
+                type="button"
+                class="px-4 py-2 text-xs font-semibold rounded-xl bg-red-500 hover:bg-red-400 text-white transition flex items-center gap-2 shadow-sm shadow-red-500/30"
+              >
+                <i data-lucide="sparkles" class="w-4 h-4"></i>
+                Réessayer
+              </button>
+              <button
+                onclick="toggleApiKeyModal(true)"
+                type="button"
+                class="px-4 py-2 text-xs font-medium rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 transition"
+              >
+                Vérifier la Clé API Gemini
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============================================== -->
+      <!-- SCREEN 1: FORMULAIRE DE RECHERCHE              -->
+      <!-- ============================================== -->
+      <section id="screenForm" class="space-y-8 transition-opacity duration-300">
+        <!-- Hero Header -->
+        <div class="text-center max-w-2xl mx-auto space-y-3 pt-2 pb-4">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-900 border border-slate-800 text-sky-400 text-xs font-medium">
+            <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+            Itinéraires intelligents
+          </div>
+          <h1 class="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white tracking-tight leading-tight">
+            Votre prochaine aventure, <br />
+            <span class="text-transparent bg-clip-text bg-gradient-to-r from-sky-400 via-sky-300 to-sky-500">
+              conçu sur mesure par Angeric.
+            </span>
+          </h1>
+          <p class="text-slate-400 text-sm sm:text-base leading-relaxed">
+            Renseignez vos envies et laissez notre algorithme calculer un plan journalier complet, les vols optimisés et une cartographie interactive.
+          </p>
+        </div>
+
+        <!-- Main Form Card -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-xl relative overflow-hidden">
+          <div class="absolute -top-24 -right-24 w-64 h-64 bg-sky-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+          <form id="tripForm" onsubmit="handleFormSubmit(event)" class="space-y-6 relative z-10">
+
+            <!-- SÉLECTEUR DE MODE DE RECHERCHE -->
+            <div class="flex flex-col sm:flex-row items-center justify-between gap-3 pt-1 border-t border-slate-800/80">
+              <span class="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <i data-lucide="compass" class="w-4 h-4 text-sky-400"></i>
+                Choisissez votre façon de planifier :
+              </span>
+              <div class="inline-flex p-1 rounded-xl bg-slate-950 border border-slate-800">
+                <button
+                  type="button"
+                  id="modeBtnNatural"
+                  onclick="switchSearchMode('natural')"
+                  class="px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition bg-sky-500 text-white shadow-sm shadow-sky-500/30"
+                >
+                  <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+                  En une phrase
+                </button>
+                <button
+                  type="button"
+                  id="modeBtnStructured"
+                  onclick="switchSearchMode('structured')"
+                  class="px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition text-slate-400 hover:text-white"
+                >
+                  <i data-lucide="calendar" class="w-3.5 h-3.5"></i>
+                  Formulaire Détaillé
+                </button>
+              </div>
+            </div>
+
+            <!-- ======================================================== -->
+            <!-- OPTION 1 : SAISIE NATURELLE & LIBRE (« EN UNE PHRASE »)  -->
+            <!-- ======================================================== -->
+            <div id="searchSectionNatural" class="space-y-4">
+              <div>
+                <label for="naturalQueryInput" class="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-2 flex items-center gap-2">
+                  <i data-lucide="sparkles" class="w-4 h-4 text-sky-400"></i>
+                  Décrivez votre projet
+                </label>
+                <div class="relative">
+                  <textarea
+                    id="naturalQueryInput"
+                    rows="3"
+                    placeholder="Ex : Je veux partir 3 jours dans le Lot en partant de Toulouse pendant les vacances de décembre..."
+                    class="w-full bg-slate-950 border border-slate-800 focus:border-sky-500 rounded-xl px-4 py-3.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500 transition leading-relaxed resize-none shadow-inner"
+                  >Je veux partir 3 jours dans le Lot en partant de Toulouse pendant les vacances de décembre</textarea>
+                </div>
+                <p class="text-xs text-slate-400 mt-2 flex items-center gap-1.5">
+                  <i data-lucide="check-circle-2" class="w-3.5 h-3.5 text-emerald-400"></i>
+                  Notre algorithme déduit automatiquement la ville de départ, la destination, la durée, la période, les correspondances et le type de transport optimal.
+                </p>
+              </div>
+
+              <!-- Suggestions d'idées en un clic -->
+              <div class="pt-1">
+                <span class="text-xs font-medium text-slate-400 block mb-2">Exemples rapides à tester :</span>
+                <div class="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onclick="fillNaturalPrompt('Je veux partir 3 jours dans le Lot en partant de Toulouse pendant les vacances de décembre')"
+                    class="text-xs px-3 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white transition text-left"
+                  >
+                    🍂 3 jours dans le Lot depuis Toulouse en décembre
+                  </button>
+                  <button
+                    type="button"
+                    onclick="fillNaturalPrompt('Road trip sauvage de 10 jours en Islande au départ de Paris en été pour voir cascades et geysers')"
+                    class="text-xs px-3 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white transition text-left"
+                  >
+                    🇮🇸 Road trip 10 jours en Islande en été
+                  </button>
+                  <button
+                    type="button"
+                    onclick="fillNaturalPrompt('Week-end romantique et gastronomique de 4 jours à Rome au départ de Lyon au printemps')"
+                    class="text-xs px-3 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white transition text-left"
+                  >
+                    🇮🇹 4 jours à Rome au départ de Lyon
+                  </button>
+                  <button
+                    type="button"
+                    onclick="fillNaturalPrompt('Séjour culturel de 7 jours au Japon entre Tokyo et Kyoto en partant de Marseille en automne')"
+                    class="text-xs px-3 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white transition text-left"
+                  >
+                    🇯🇵 7 jours Tokyo & Kyoto en automne
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ======================================================== -->
+            <!-- OPTION 2 : FORMULAIRE DÉTAILLÉ MULTI-CHAMPS              -->
+            <!-- ======================================================== -->
+            <div id="searchSectionStructured" class="hidden space-y-6">
+              <!-- Grille de champs du voyage -->
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <!-- Ville de départ -->
+                <div>
+                  <label for="departureCity" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-2">
+                    <i data-lucide="plane-takeoff" class="w-4 h-4 text-sky-400"></i>
+                    Ville de départ
+                  </label>
+                  <input
+                    type="text"
+                    id="departureCity"
+                    placeholder="Ex: Paris (CDG), Lyon, Bruxelles, Montréal..."
+                    value="Paris"
+                    class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition"
+                  />
+                </div>
+
+                <!-- Destination(s) -->
+                <div>
+                  <label for="destinations" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-2">
+                    <i data-lucide="globe" class="w-4 h-4 text-sky-400"></i>
+                    Destination(s) envisagée(s)
+                  </label>
+                  <input
+                    type="text"
+                    id="destinations"
+                    placeholder="Ex: Japon (Tokyo & Kyoto), Islande, Rome, Costa Rica..."
+                    value="Japon (Tokyo & Kyoto)"
+                    class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition"
+                  />
+                </div>
+
+                <!-- Durée en jours -->
+                <div>
+                  <label for="durationDays" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-2">
+                    <i data-lucide="calendar" class="w-4 h-4 text-sky-400"></i>
+                    Durée du voyage (jours)
+                  </label>
+                  <input
+                    type="number"
+                    id="durationDays"
+                    min="1"
+                    max="30"
+                    value="7"
+                    class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition"
+                  />
+                </div>
+
+                <!-- Période ou Dates -->
+                <div>
+                  <label for="datesText" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-2">
+                    <i data-lucide="clock" class="w-4 h-4 text-sky-400"></i>
+                    Période ou dates indicatives
+                  </label>
+                  <input
+                    type="text"
+                    id="datesText"
+                    placeholder="Ex: Octobre (Automne), Mai 2025, 2 semaines en été..."
+                    value="Automne (Octobre)"
+                    class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition"
+                  />
+                </div>
+
+                <!-- Style de voyage -->
+                <div>
+                  <label for="style" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-2">
+                    <i data-lucide="compass" class="w-4 h-4 text-sky-400"></i>
+                    Style de voyage
+                  </label>
+                  <select
+                    id="style"
+                    class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition"
+                  >
+                    <option value="Culture & Découverte">Culture, Temples & Patrimoine</option>
+                    <option value="Aventure & Nature">Aventure & Randonnée Nature</option>
+                    <option value="Détente & Sérénité">Détente, Bien-être & Paysages</option>
+                    <option value="Gastronomie & Immersion Locale">Gastronomie & Immersion Locale</option>
+                    <option value="Road Trip Urbain & Éclectique">Road Trip Éclectique & Moderne</option>
+                  </select>
+                </div>
+
+                <!-- Budget estimé -->
+                <div>
+                  <label for="budgetEstimate" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-2">
+                    <i data-lucide="wallet" class="w-4 h-4 text-sky-400"></i>
+                    Gamme de budget souhaité
+                  </label>
+                  <select
+                    id="budgetEstimate"
+                    class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition"
+                  >
+                    <option value="Équilibré (~1200€ - 1800€ / pers)">Équilibré & Confortable (~1200€ - 1800€ / pers)</option>
+                    <option value="Économique / Routard (~800€ - 1200€ / pers)">Économique / Routard (~800€ - 1200€ / pers)</option>
+                    <option value="Haut de gamme / Premium (>2500€ / pers)">Haut de gamme / Premium (>2500€ / pers)</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Préférences & Remarques libres -->
+              <div>
+                <label for="customPreferences" class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-2">
+                  <i data-lucide="check-circle-2" class="w-4 h-4 text-sky-400"></i>
+                  Souhaits particuliers ou rythme (optionnel)
+                </label>
+                <textarea
+                  id="customPreferences"
+                  rows="2"
+                  placeholder="Ex: Éviter les foules aux heures de pointe, privilégier les trains à grande vitesse, aimer la street food et les jardins zen..."
+                  class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500 transition"
+                ></textarea>
+              </div>
+            </div>
+
+            <!-- Submit Button -->
+            <button
+              type="submit"
+              id="generateBtn"
+              class="w-full py-4 px-6 rounded-xl bg-gradient-to-r from-sky-500 to-sky-600 hover:from-sky-400 hover:to-sky-500 text-white font-semibold text-base shadow-lg shadow-sky-500/25 transition duration-200 flex items-center justify-center gap-3 cursor-pointer"
+            >
+              <i data-lucide="sparkles" class="w-5 h-5"></i>
+              <span>Générer mon itinéraire sur mesure</span>
+            </button>
+          </form>
+        </div>
+      </section>
+
+      <!-- ============================================== -->
+      <!-- SCREEN 2: ÉCRAN DE CHARGEMENT ANIMÉ            -->
+      <!-- ============================================== -->
+      <section id="screenLoading" class="hidden py-16 text-center space-y-8 transition-opacity duration-300">
+        <div class="relative w-28 h-28 mx-auto flex items-center justify-center">
+          <div class="absolute inset-0 rounded-full border-4 border-sky-500/20 animate-ping"></div>
+          <div class="absolute inset-0 rounded-full border-4 border-t-sky-400 border-r-transparent border-b-sky-500/30 border-l-transparent animate-spin"></div>
+          <div class="w-20 h-20 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center shadow-inner">
+            <i data-lucide="compass" class="w-10 h-10 text-sky-400 animate-pulse"></i>
+          </div>
+        </div>
+
+        <div class="space-y-3 max-w-md mx-auto">
+          <h2 class="text-2xl font-bold text-white tracking-tight">Création de votre itinéraire...</h2>
+          <p id="loadingStatusText" class="text-slate-400 text-sm h-6 transition-all duration-300">
+            Analyse des meilleures routes et correspondances aériennes...
+          </p>
+        </div>
+
+        <!-- Animated Steps indicators -->
+        <div class="max-w-md mx-auto bg-slate-900/60 border border-slate-800 rounded-xl p-4 text-left space-y-2.5">
+          <div class="flex items-center gap-3 text-xs text-sky-400">
+            <i data-lucide="compass" class="w-4 h-4 text-sky-400"></i>
+            <span>Estimation des liaisons et durées de trajet</span>
+          </div>
+          <div class="flex items-center gap-3 text-xs text-slate-300">
+            <i data-lucide="map-pin" class="w-4 h-4 text-sky-400"></i>
+            <span>Calcul précis des coordonnées géographiques par étape</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================== -->
+      <!-- SCREEN 3: DASHBOARD DU VOYAGE                  -->
+      <!-- ============================================== -->
+      <section id="screenDashboard" class="hidden space-y-8 transition-opacity duration-300">
+
+        <!-- Dashboard Header & Overview Card -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-xl space-y-6">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800/80 pb-6">
+            <div class="space-y-1">
+              <div class="flex items-center gap-2 text-xs font-semibold text-sky-400 uppercase tracking-wider">
+                <i data-lucide="sparkles" class="w-4 h-4"></i>
+                Itinéraire Optimisé
+              </div>
+              <h2 id="dashTripTitle" class="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+                Grand Périple
+              </h2>
+            </div>
+            <div class="flex flex-wrap items-center gap-2.5">
+              <button
+                id="exportExcelBtn"
+                onclick="handleExportCurrentTripToExcel()"
+                type="button"
+                class="px-4 py-2 text-xs font-semibold rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 transition flex items-center gap-2 shadow-sm cursor-pointer"
+                title="Exporter cet itinéraire complet au format Excel (.xlsx)"
+              >
+                <i data-lucide="file-spreadsheet" class="w-4 h-4 text-emerald-400"></i>
+                <span>Exporter en Excel</span>
+              </button>
+              <button
+                id="saveTripBtn"
+                onclick="toggleSaveCurrentTrip()"
+                type="button"
+                class="px-4 py-2 text-xs font-semibold rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 transition flex items-center gap-2 shadow-sm cursor-pointer"
+                title="Sauvegarder ce voyage dans votre navigateur"
+              >
+                <i id="saveTripBtnIcon" data-lucide="bookmark" class="w-4 h-4 text-amber-400"></i>
+                <span id="saveTripBtnLabel">Sauvegarder ce voyage</span>
+              </button>
+              <button
+                onclick="handleNewSearch()"
+                type="button"
+                class="px-4 py-2 text-xs font-semibold rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition flex items-center gap-2 shadow-sm cursor-pointer"
+              >
+                <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                Nouvelle Recherche
+              </button>
+            </div>
+          </div>
+
+          <!-- Key Trip Badges Grid -->
+          <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            <!-- Départ -->
+            <div class="bg-slate-950 border border-slate-800/80 p-3 rounded-xl flex flex-col justify-between">
+              <div class="flex items-center gap-1.5 text-xs text-slate-400">
+                <i id="dashDepartIcon" data-lucide="map-pin" class="w-3.5 h-3.5 text-sky-400"></i>
+                <span>Départ</span>
+              </div>
+              <span id="dashDeparture" class="text-sm font-semibold text-white truncate mt-1">Paris</span>
+            </div>
+
+            <!-- Destinations -->
+            <div class="bg-slate-950 border border-slate-800/80 p-3 rounded-xl flex flex-col justify-between">
+              <div class="flex items-center gap-1.5 text-xs text-slate-400">
+                <i data-lucide="globe" class="w-3.5 h-3.5 text-sky-400"></i>
+                <span>Destinations</span>
+              </div>
+              <span id="dashDestinations" class="text-sm font-semibold text-white truncate mt-1">Japon</span>
+            </div>
+
+            <!-- Durée -->
+            <div class="bg-slate-950 border border-slate-800/80 p-3 rounded-xl flex flex-col justify-between">
+              <div class="flex items-center gap-1.5 text-xs text-slate-400">
+                <i data-lucide="calendar" class="w-3.5 h-3.5 text-sky-400"></i>
+                <span>Durée</span>
+              </div>
+              <span id="dashDuration" class="text-sm font-semibold text-white truncate mt-1">7 jours</span>
+            </div>
+
+            <!-- Style -->
+            <div class="bg-slate-950 border border-slate-800/80 p-3 rounded-xl flex flex-col justify-between">
+              <div class="flex items-center gap-1.5 text-xs text-slate-400">
+                <i data-lucide="compass" class="w-3.5 h-3.5 text-sky-400"></i>
+                <span>Style</span>
+              </div>
+              <span id="dashStyle" class="text-sm font-semibold text-white truncate mt-1">Culture</span>
+            </div>
+
+            <!-- Budget (Cliquable pour ouvrir le détail de l'estimation) -->
+            <button
+              type="button"
+              onclick="openBudgetModal()"
+              class="bg-slate-950 border border-slate-800/80 hover:border-sky-500/60 hover:bg-slate-900/90 p-3 rounded-xl flex flex-col justify-between transition text-left cursor-pointer group shadow-sm"
+              title="Cliquez pour afficher le détail de l'estimation du budget"
+            >
+              <div class="flex items-center justify-between text-xs text-slate-400 w-full">
+                <div class="flex items-center gap-1.5">
+                  <i data-lucide="wallet" class="w-3.5 h-3.5 text-sky-400"></i>
+                  <span>Budget</span>
+                </div>
+                <span class="text-[10px] text-sky-400 font-semibold group-hover:underline flex items-center gap-0.5">Détail 🔍</span>
+              </div>
+              <span id="dashBudget" class="text-sm font-semibold text-sky-400 truncate mt-1">1500€</span>
+            </button>
+
+            <!-- Décalage horaire -->
+            <div class="bg-slate-950 border border-slate-800/80 p-3 rounded-xl flex flex-col justify-between" id="dashTzCard" title="Décalage horaire concret">
+              <div class="flex items-center gap-1.5 text-xs text-slate-400">
+                <i data-lucide="clock" class="w-3.5 h-3.5 text-sky-400"></i>
+                <span>Décalage horaire</span>
+              </div>
+              <span id="dashTimeZone" class="text-xs font-semibold text-white truncate mt-1" title="Décalage horaire">+7h</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============================================== -->
+        <!-- ADAPTER L'ITINÉRAIRE APRÈS COUP (REFINEMENT)   -->
+        <!-- ============================================== -->
+        <div class="bg-gradient-to-r from-sky-950/40 via-slate-900 to-indigo-950/40 border border-sky-500/30 rounded-2xl p-5 shadow-lg space-y-3">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+            <div class="flex items-center gap-2 text-xs font-bold text-sky-400 uppercase tracking-wider">
+              <i data-lucide="sparkles" class="w-4 h-4 text-sky-400"></i>
+              Adapter ou enrichir cet itinéraire
+            </div>
+            <span class="text-xs text-slate-400">Modifie uniquement les parties ciblées (monument, étape, repas)</span>
+          </div>
+
+          <form id="refineForm" onsubmit="handleRefineSubmit(event)" class="flex flex-col sm:flex-row gap-2">
+            <input
+              type="text"
+              id="refineInput"
+              placeholder="Ex: 'Je veux visiter le musée du Louvre le jour 2', 'Ajouter un dîner gastronomique le soir du jour 1'..."
+              class="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500"
+            />
+            <button
+              type="submit"
+              id="refineSubmitBtn"
+              class="px-5 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-sm shadow-sky-500/30 whitespace-nowrap cursor-pointer"
+            >
+              <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+              <span>Adapter l'itinéraire</span>
+            </button>
+          </form>
+
+          <!-- Suggestions rapides d'adaptation -->
+          <div class="flex flex-wrap items-center gap-2 pt-1 text-xs text-slate-400">
+            <span class="text-slate-500">Exemples rapides :</span>
+            <button
+              type="button"
+              onclick="setRefineText('Ajouter un déjeuner gastronomique typique avec spécialités locales le midi du jour 2')"
+              class="px-2.5 py-1 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-300 transition cursor-pointer border border-slate-700/80"
+            >
+              🍽️ Déjeuner gastronomique J2
+            </button>
+            <button
+              type="button"
+              onclick="setRefineText('Prévoir un départ plus calme le matin du jour 1 avec une pause café et détente')"
+              class="px-2.5 py-1 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-300 transition cursor-pointer border border-slate-700/80"
+            >
+              ☕ Matin plus détendu J1
+            </button>
+            <button
+              type="button"
+              onclick="setRefineText('Ajouter la visite d\'un monument historique emblématique incontournable')"
+              class="px-2.5 py-1 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-300 transition cursor-pointer border border-slate-700/80"
+            >
+              🏛️ Ajouter un monument
+            </button>
+          </div>
+
+          <!-- Bannière de chargement affinement -->
+          <div id="refineLoadingBanner" class="hidden p-3 rounded-xl bg-sky-950/70 border border-sky-800 text-sky-200 text-xs flex items-center gap-2.5 animate-pulse">
+            <i data-lucide="loader-2" class="w-4 h-4 animate-spin text-sky-400"></i>
+            <span id="refineLoadingText">Ajustement ciblé de l'itinéraire en cours sans modifier le reste du voyage...</span>
+          </div>
+        </div>
+
+        <!-- Dashboard Navigation Tabs -->
+        <div class="flex border-b border-slate-800 gap-2 sm:gap-4 overflow-x-auto">
+          <button
+            id="tabBtnItinerary"
+            onclick="switchTab('itinerary')"
+            type="button"
+            class="pb-3 px-4 font-semibold text-sm flex items-center gap-2 border-b-2 border-sky-400 text-sky-400 transition"
+          >
+            <i data-lucide="calendar" class="w-4 h-4"></i>
+            Itinéraire Journalier
+          </button>
+          <button
+            id="tabBtnFlights"
+            onclick="switchTab('flights')"
+            type="button"
+            class="pb-3 px-4 font-semibold text-sm flex items-center gap-2 border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition"
+          >
+            <i id="tabFlightsIcon" data-lucide="compass" class="w-4 h-4"></i>
+            <span id="tabFlightsLabel">Trajets & Conseils</span>
+          </button>
+          <button
+            id="tabBtnMap"
+            onclick="switchTab('map')"
+            type="button"
+            class="pb-3 px-4 font-semibold text-sm flex items-center gap-2 border-b-2 border-transparent text-slate-400 hover:text-slate-200 transition"
+          >
+            <i data-lucide="globe" class="w-4 h-4"></i>
+            Carte Interactive
+          </button>
+        </div>
+
+        <!-- TAB 1: ITINÉRAIRE JOURNALIER -->
+        <div id="tabContentItinerary" class="space-y-6">
+
+          <!-- SCHÉMA VOYAGE MULTIDESTINATION (TEMPS RELATIF PAR ÉTAPE) -->
+          <div id="multiDestOverviewSection" class="hidden bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 shadow-xl space-y-5">
+            <!-- En-tête du Schéma -->
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-4">
+              <div class="space-y-1">
+                <div class="flex items-center gap-2">
+                  <span class="p-1.5 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-400">
+                    <i data-lucide="route" class="w-4 h-4"></i>
+                  </span>
+                  <h3 class="text-base font-bold text-white tracking-tight">Répartition du temps par destination</h3>
+                  <span id="multiDestBadgeCount" class="text-xs px-2.5 py-0.5 rounded-full bg-slate-950 border border-slate-800 text-sky-300 font-semibold">
+                    0 étape
+                  </span>
+                </div>
+                <p class="text-xs text-slate-400">
+                  Vue d'ensemble en un coup d'œil du temps relatif passé dans chaque étape avant le déroulé jour par jour.
+                </p>
+              </div>
+              <div class="flex items-center gap-2 self-start sm:self-auto">
+                <div class="text-xs text-slate-300 flex items-center gap-1.5 bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800">
+                  <i data-lucide="clock" class="w-3.5 h-3.5 text-sky-400"></i>
+                  <span id="multiDestTotalDaysLabel">Durée totale : 0 jours</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Schéma Graphique : Barre Proportionnelle Multi-Segments -->
+            <div class="space-y-2.5">
+              <div class="flex items-center justify-between text-xs text-slate-400">
+                <span class="flex items-center gap-1.5 font-medium">
+                  <i data-lucide="pie-chart" class="w-3.5 h-3.5 text-sky-400"></i>
+                  Poids relatif & chronologie des étapes
+                </span>
+                <span class="text-[11px] text-slate-500 font-mono">100% de l'itinéraire</span>
+              </div>
+              
+              <!-- Barre continue de temps relatif -->
+              <div id="multiDestProgressBar" class="h-8 w-full rounded-xl bg-slate-950 p-1 border border-slate-800 flex overflow-hidden gap-1 shadow-inner">
+                <!-- Segments dynamiques -->
+              </div>
+
+              <!-- Légende des pourcentages -->
+              <div id="multiDestBarLegend" class="flex flex-wrap items-center gap-x-4 gap-y-2 pt-1 text-xs">
+                <!-- Légende dynamique -->
+              </div>
+            </div>
+
+            <!-- Grille détaillée des Cartes d'Étapes avec temps relatif et raccourci jour -->
+            <div class="space-y-2 pt-2 border-t border-slate-800/80">
+              <div class="flex items-center justify-between text-xs text-slate-400">
+                <span class="font-bold text-slate-300 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                  <i data-lucide="map" class="w-3.5 h-3.5 text-sky-400"></i>
+                  Détail par destination (cliquez pour aller directement aux journées)
+                </span>
+                <span class="text-[11px] text-slate-500 hidden sm:inline">Raccourcis de navigation directe</span>
+              </div>
+              <div id="multiDestCardsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                <!-- Cartes d'étapes dynamiques -->
+              </div>
+            </div>
+          </div>
+
+          <div id="itineraryDaysList" class="space-y-4">
+            <!-- Dynamically populated day cards -->
+          </div>
+        </div>
+
+        <!-- TAB 2: TRAJETS / VOLS & CONSEILS PRATIQUES -->
+        <div id="tabContentFlights" class="hidden space-y-6">
+
+          <!-- Bannière Préconisations Horaires -->
+          <div class="p-4 rounded-2xl bg-gradient-to-r from-sky-950/60 via-slate-900 to-indigo-950/50 border border-sky-500/30 flex items-start sm:items-center gap-3.5 shadow-md">
+            <div class="p-2 rounded-xl bg-sky-500/20 text-sky-400 shrink-0">
+              <i data-lucide="clock" class="w-5 h-5"></i>
+            </div>
+            <div class="space-y-0.5">
+              <h4 class="text-sm font-bold text-white flex items-center gap-2">
+                Horaires de transport optimisés
+                <span class="text-[11px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300">Temps maximisé sur place</span>
+              </h4>
+              <p class="text-xs text-slate-300 leading-relaxed">
+                Les liaisons préconisent systématiquement des <strong class="text-sky-300">départs le matin</strong> pour profiter dès le premier jour, et des <strong class="text-sky-300">retours le soir</strong> pour profiter pleinement de la dernière journée.
+              </p>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+            <!-- Carte Trajets / Vols -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5">
+              <div class="flex items-center gap-2 text-sm font-bold text-white uppercase tracking-wider">
+                <i id="flightHeaderIcon" data-lucide="compass" class="w-4 h-4 text-sky-400"></i>
+                <span id="flightHeaderTitle">Synthèse des Trajets & Transports</span>
+              </div>
+
+              <div class="space-y-4">
+                <!-- Trajet Aller -->
+                <div class="p-4 rounded-xl bg-slate-950 border border-slate-800/80 space-y-1">
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2 text-xs font-semibold text-sky-400">
+                      <i id="flightOutboundIcon" data-lucide="compass" class="w-4 h-4"></i>
+                      <span id="flightOutboundLabel">Trajet Aller</span>
+                    </div>
+                    <span class="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-sky-500/20 text-sky-300">🌅 Départ matin conseillé</span>
+                  </div>
+                  <p id="flightOutbound" class="text-sm text-slate-200 font-medium">Chargement...</p>
+                </div>
+
+                <!-- Trajet Retour -->
+                <div class="p-4 rounded-xl bg-slate-950 border border-slate-800/80 space-y-1.5">
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2 text-xs font-semibold text-sky-400">
+                      <i id="flightInboundIcon" data-lucide="compass" class="w-4 h-4"></i>
+                      <span id="flightInboundLabel">Trajet Retour</span>
+                    </div>
+                    <span class="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300">🌙 Retour soir conseillé</span>
+                  </div>
+                  <p id="flightInbound" class="text-sm text-slate-200 font-medium">Chargement...</p>
+                  <div id="flightInboundLastStopBadge" class="hidden text-[11px] text-emerald-400 font-medium flex items-center gap-1.5 pt-1.5 border-t border-slate-900">
+                    <i data-lucide="check-circle-2" class="w-3 h-3 text-emerald-400 shrink-0"></i>
+                    <span id="flightInboundLastStopText">Départ retour assuré depuis la dernière étape du séjour</span>
+                  </div>
+                </div>
+
+                <!-- Durée & Escales/Étapes -->
+                <div class="grid grid-cols-2 gap-3">
+                  <div class="p-3 rounded-xl bg-slate-950 border border-slate-800/80">
+                    <span class="text-xs text-slate-400 block flex items-center gap-1.5">
+                      <i data-lucide="clock" class="w-3.5 h-3.5 text-sky-400"></i>
+                      <span id="flightDurationLabel">Durée du trajet</span>
+                    </span>
+                    <span id="flightDuration" class="text-sm font-semibold text-white mt-1 block">~12h</span>
+                  </div>
+                  <div class="p-3 rounded-xl bg-slate-950 border border-slate-800/80">
+                    <span class="text-xs text-slate-400 block flex items-center gap-1.5">
+                      <i data-lucide="compass" class="w-3.5 h-3.5 text-sky-400"></i>
+                      <span id="flightLayoversLabel">Correspondances / Étapes</span>
+                    </span>
+                    <span id="flightLayovers" class="text-sm font-semibold text-white mt-1 block">Direct</span>
+                  </div>
+                </div>
+
+                <!-- Liaisons et Vols Intermédiaires -->
+                <div class="pt-4 border-t border-slate-800/80 space-y-3">
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                      <i data-lucide="route" class="w-3.5 h-3.5 text-sky-400"></i>
+                      Vols & Liaisons Intermédiaires
+                    </span>
+                    <span id="intermediateCountBadge" class="text-[11px] px-2 py-0.5 rounded-full bg-slate-950 border border-slate-800 text-slate-400 font-medium">0 liaison</span>
+                  </div>
+                  <div id="intermediateConnectionsList" class="space-y-2.5">
+                    <!-- Populated dynamically -->
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Climat & Période Idéale -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5">
+              <div class="flex items-center gap-2 text-sm font-bold text-white uppercase tracking-wider">
+                <i data-lucide="sun" class="w-4 h-4 text-sky-400"></i>
+                Météo, Climat & Meilleure Période
+              </div>
+
+              <div class="p-4 rounded-xl bg-slate-950 border border-slate-800/80">
+                <p id="climateInfo" class="text-sm text-slate-300 leading-relaxed">
+                  Chargement des prévisions climatiques...
+                </p>
+              </div>
+
+              <!-- Conseils Pratiques et Événements Locaux -->
+              <div class="space-y-3">
+                <div class="flex items-center gap-2 text-sm font-bold text-white uppercase tracking-wider">
+                  <i data-lucide="check-circle-2" class="w-4 h-4 text-sky-400"></i>
+                  Conseils Pratiques & Coutumes
+                </div>
+                <ul id="localEventsList" class="space-y-2 text-sm text-slate-300">
+                  <!-- Dynamically populated -->
+                </ul>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- TAB 3: CARTE INTERACTIVE -->
+        <div id="tabContentMap" class="hidden space-y-6">
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 shadow-xl">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h3 class="font-bold text-white text-lg flex items-center gap-2">
+                  <i data-lucide="map-pin" class="w-5 h-5 text-sky-400"></i>
+                  Visualisation du Tracé & Étapes Géocodées
+                </h3>
+                <p class="text-xs text-slate-400">Cliquez sur un marqueur pour afficher le détail de l'étape.</p>
+              </div>
+              <button
+                onclick="resetMapBounds()"
+                type="button"
+                class="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 self-start sm:self-auto flex items-center gap-1.5"
+              >
+                <i data-lucide="globe" class="w-3.5 h-3.5 text-sky-400"></i>
+                Recentrer la carte
+              </button>
+            </div>
+
+            <!-- Interactive Map Container as strictly required -->
+            <div id="map" class="w-full h-[450px] rounded-xl border border-slate-800"></div>
+
+            <!-- Stops Quick Jump Grid -->
+            <div class="pt-2">
+              <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-3">
+                Étapes du parcours (cliquez pour zoomer) :
+              </span>
+              <div id="mapStopsPills" class="flex flex-wrap gap-2">
+                <!-- Dynamically filled with day quick-zoom buttons -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-slate-900 bg-slate-950 py-6 text-center text-xs text-slate-500">
+      <div class="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div class="flex items-center gap-2">
+          <i data-lucide="compass" class="w-4 h-4 text-sky-400"></i>
+          <span>Optitrip — Générateur de souvenirs</span>
+        </div>
+        <div>
+          <span>100% Client-Side SPA • GitHub Pages Compatible</span>
+        </div>
+      </div>
+    </footer>
+
+    <!-- Modal Clé API (Optionnel / Rapide) -->
+    <div id="apiKeyModal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl relative">
+        <div class="flex items-center justify-between">
+          <h3 class="text-lg font-bold text-white flex items-center gap-2">
+            <i data-lucide="sparkles" class="w-5 h-5 text-sky-400"></i>
+            Configuration de la Clé API Gemini
+          </h3>
+          <button
+            onclick="toggleApiKeyModal(false)"
+            type="button"
+            class="text-slate-400 hover:text-white text-xl leading-none"
+          >&times;</button>
+        </div>
+
+        <p class="text-xs text-slate-400 leading-relaxed">
+          Optitrip fonctionne directement avec l'API Google Gemini sans aucun intermédiaire serveur. Votre clé est requise pour générer les itinéraires complets et est stockée uniquement sur votre navigateur.
+        </p>
+
+        <div>
+          <label class="block text-xs font-semibold uppercase text-slate-400 mb-2">Votre Clé API :</label>
+          <input
+            type="password"
+            id="modalApiKeyInput"
+            placeholder="AIzaSy..."
+            class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
+          />
+        </div>
+
+        <div class="flex justify-between items-center text-xs">
+          <a
+            href="https://aistudio.google.com/app/apikey"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-sky-400 hover:underline flex items-center gap-1"
+          >
+            Obtenir une clé API gratuite
+          </a>
+        </div>
+
+        <div class="flex gap-3 pt-2">
+          <button
+            onclick="saveModalApiKey()"
+            type="button"
+            class="flex-1 py-2.5 px-4 bg-sky-500 hover:bg-sky-400 text-white font-semibold rounded-xl text-sm transition"
+          >
+            Enregistrer la clé
+          </button>
+          <button
+            onclick="toggleApiKeyModal(false)"
+            type="button"
+            class="py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium rounded-xl text-sm transition"
+          >
+            Fermer
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- MODAL: MES VOYAGES SAUVEGARDÉS                 -->
+    <!-- ============================================== -->
+    <div id="savedTripsModal" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 space-y-5 shadow-2xl relative max-h-[85vh] flex flex-col">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+          <div class="flex items-center gap-2.5">
+            <div class="p-1.5 rounded-lg bg-amber-500/20 text-amber-400">
+              <i data-lucide="bookmark" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <h3 class="text-lg font-bold text-white">Mes Voyages Sauvegardés</h3>
+              <p class="text-xs text-slate-400">Retrouvez et rechargez vos itinéraires enregistrés à tout moment</p>
+            </div>
+          </div>
+          <button
+            onclick="toggleSavedTripsModal(false)"
+            type="button"
+            class="text-slate-400 hover:text-white text-2xl leading-none cursor-pointer"
+          >&times;</button>
+        </div>
+
+        <!-- Liste des voyages enregistrés -->
+        <div id="savedTripsList" class="flex-1 overflow-y-auto space-y-3 pr-1 py-1">
+          <!-- Populated by JavaScript -->
+        </div>
+
+        <div class="flex items-center justify-between pt-3 border-t border-slate-800 text-xs">
+          <span id="savedTripsModalFooterText" class="text-slate-400">0 voyage(s) sauvegardé(s)</span>
+          <div class="flex items-center gap-2">
+            <button
+              onclick="exportAllSavedTripsToExcel()"
+              type="button"
+              class="py-2 px-3 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 font-medium rounded-xl text-xs transition cursor-pointer flex items-center gap-1.5"
+              title="Exporter tous les voyages au format Excel"
+            >
+              <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5 text-emerald-400"></i>
+              <span>Exporter Excel (.xlsx)</span>
+            </button>
+            <button
+              onclick="exportAllSavedTrips()"
+              type="button"
+              class="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium rounded-xl text-xs transition cursor-pointer flex items-center gap-1.5"
+            >
+              <i data-lucide="download" class="w-3.5 h-3.5"></i>
+              <span>Exporter JSON</span>
+            </button>
+            <button
+              onclick="toggleSavedTripsModal(false)"
+              type="button"
+              class="py-2 px-4 bg-sky-500 hover:bg-sky-400 text-white font-semibold rounded-xl text-xs transition cursor-pointer"
+            >
+              Fermer
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- MODAL: DÉTAIL DE L'ESTIMATION DU BUDGET        -->
+    <!-- ============================================== -->
+    <div id="budgetDetailModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-xl w-full p-6 space-y-5 shadow-2xl relative max-h-[90vh] flex flex-col">
+        <!-- Header -->
+        <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+          <div class="flex items-center gap-2.5">
+            <div class="p-2 rounded-xl bg-sky-500/20 text-sky-400">
+              <i data-lucide="wallet" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <h3 class="text-lg font-bold text-white">Détail de l'Estimation du Budget</h3>
+              <p class="text-xs text-slate-400" id="budgetModalSubtitle">Ventilation prévisionnelle par poste de dépense</p>
+            </div>
+          </div>
+          <button
+            onclick="closeBudgetModal()"
+            type="button"
+            class="text-slate-400 hover:text-white text-2xl leading-none cursor-pointer"
+          >&times;</button>
+        </div>
+
+        <!-- Corps du budget avec postes -->
+        <div class="flex-1 overflow-y-auto space-y-3.5 pr-1 py-1">
+          <!-- Total Banner -->
+          <div class="p-4 rounded-xl bg-gradient-to-r from-sky-950/70 via-slate-900 to-indigo-950/60 border border-sky-500/30 flex items-center justify-between">
+            <div class="space-y-0.5">
+              <span class="text-xs text-slate-400 uppercase tracking-wider font-semibold">Budget Total Estimé</span>
+              <div class="text-xl sm:text-2xl font-extrabold text-sky-400" id="budgetModalTotalAmount">1500€</div>
+            </div>
+            <div class="text-right space-y-0.5">
+              <span class="text-[11px] text-slate-400 block font-medium">Moyenne journalière</span>
+              <span class="text-xs font-bold text-emerald-400 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20" id="budgetModalDailyAvg">~100€ / jour</span>
+            </div>
+          </div>
+
+          <!-- Postes de dépenses -->
+          <div class="space-y-2.5">
+            <!-- 1. Transports & Vols -->
+            <div class="p-3.5 rounded-xl bg-slate-950 border border-slate-800/80 space-y-1">
+              <div class="flex items-center justify-between text-xs font-bold">
+                <span class="text-white flex items-center gap-1.5">
+                  <i data-lucide="plane" class="w-4 h-4 text-sky-400"></i>
+                  Vols & Transports Principaux
+                </span>
+                <span class="text-sky-300 font-mono" id="budgetPostFlightsAmount">~650€</span>
+              </div>
+              <p class="text-xs text-slate-400 leading-relaxed" id="budgetPostFlightsDesc">Vols aller-retour depuis les mêmes aéroports et liaisons nécessaires.</p>
+            </div>
+
+            <!-- 2. Hébergement -->
+            <div class="p-3.5 rounded-xl bg-slate-950 border border-slate-800/80 space-y-1">
+              <div class="flex items-center justify-between text-xs font-bold">
+                <span class="text-white flex items-center gap-1.5">
+                  <i data-lucide="building" class="w-4 h-4 text-amber-400"></i>
+                  Hébergements & Nuitées
+                </span>
+                <span class="text-amber-300 font-mono" id="budgetPostHotelAmount">~450€</span>
+              </div>
+              <p class="text-xs text-slate-400 leading-relaxed" id="budgetPostHotelDesc">Hôtels 3 étoiles, gîtes ou hébergements traditionnels.</p>
+            </div>
+
+            <!-- 3. Restauration -->
+            <div class="p-3.5 rounded-xl bg-slate-950 border border-slate-800/80 space-y-1">
+              <div class="flex items-center justify-between text-xs font-bold">
+                <span class="text-white flex items-center gap-1.5">
+                  <i data-lucide="utensils" class="w-4 h-4 text-orange-400"></i>
+                  Restauration & Gastronomie
+                </span>
+                <span class="text-orange-300 font-mono" id="budgetPostFoodAmount">~300€</span>
+              </div>
+              <p class="text-xs text-slate-400 leading-relaxed" id="budgetPostFoodDesc">Déjeuners locaux, pauses dégustation et dîners conviviaux.</p>
+            </div>
+
+            <!-- 4. Activités & Visites -->
+            <div class="p-3.5 rounded-xl bg-slate-950 border border-slate-800/80 space-y-1">
+              <div class="flex items-center justify-between text-xs font-bold">
+                <span class="text-white flex items-center gap-1.5">
+                  <i data-lucide="ticket" class="w-4 h-4 text-purple-400"></i>
+                  Visites, Monuments & Activités
+                </span>
+                <span class="text-purple-300 font-mono" id="budgetPostActivitiesAmount">~150€</span>
+              </div>
+              <p class="text-xs text-slate-400 leading-relaxed" id="budgetPostActivitiesDesc">Billets d'entrée musées, monuments historiques et expériences guidées.</p>
+            </div>
+
+            <!-- 5. Transports Locaux -->
+            <div class="p-3.5 rounded-xl bg-slate-950 border border-slate-800/80 space-y-1">
+              <div class="flex items-center justify-between text-xs font-bold">
+                <span class="text-white flex items-center gap-1.5">
+                  <i data-lucide="train" class="w-4 h-4 text-emerald-400"></i>
+                  Transports Locaux & Déplacements
+                </span>
+                <span class="text-emerald-300 font-mono" id="budgetPostTransportsAmount">~100€</span>
+              </div>
+              <p class="text-xs text-slate-400 leading-relaxed" id="budgetPostTransportsDesc">Cartes de métro, bus locaux et transferts aéroport/gare.</p>
+            </div>
+
+            <!-- 6. Conseil Économies -->
+            <div class="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800/60 flex items-start gap-2.5">
+              <i data-lucide="sparkles" class="w-4 h-4 text-sky-400 shrink-0 mt-0.5"></i>
+              <div class="space-y-0.5">
+                <span class="text-xs font-bold text-slate-300">Astuce pour maîtriser ce budget</span>
+                <p class="text-xs text-slate-400 leading-relaxed" id="budgetModalTipsText">Réservez vos vols au plus tôt et achetez des pass de transport combinés.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="flex items-center justify-between pt-3 border-t border-slate-800 text-xs">
+          <button
+            onclick="handleExportCurrentTripToExcel()"
+            type="button"
+            class="py-2 px-3 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 font-medium rounded-xl text-xs transition cursor-pointer flex items-center gap-1.5"
+          >
+            <i data-lucide="file-spreadsheet" class="w-3.5 h-3.5 text-emerald-400"></i>
+            <span>Exporter ce budget en Excel</span>
+          </button>
+          <button
+            onclick="closeBudgetModal()"
+            type="button"
+            class="py-2 px-4 bg-sky-500 hover:bg-sky-400 text-white font-semibold rounded-xl text-xs transition cursor-pointer"
+          >
+            Fermer
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Application Script Logic -->
+    <script>
+      // Global Application State
+      let currentTripData = null;
+      let mapInstance = null;
+      let mapMarkers = [];
+      let loadingInterval = null;
+      let lastFormPayload = null;
+      let serverHasKey = false;
+      let currentSearchMode = 'natural'; // 'natural' or 'structured'
+
+      // LocalStorage Key Name
+      const STORAGE_KEY = 'optitrip_gemini_key';
+
+      // Initialization on DOM Content Loaded
+      window.addEventListener('DOMContentLoaded', () => {
+        initApiKey();
+        checkServerStatus();
+        updateSavedTripsCount();
+        lucide.createIcons();
+      });
+
+      // Switch between Natural Language and Structured Form
+      function switchSearchMode(mode) {
+        currentSearchMode = mode;
+        const btnNatural = document.getElementById('modeBtnNatural');
+        const btnStructured = document.getElementById('modeBtnStructured');
+        const sectionNatural = document.getElementById('searchSectionNatural');
+        const sectionStructured = document.getElementById('searchSectionStructured');
+
+        if (mode === 'natural') {
+          btnNatural.className = 'px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition bg-sky-500 text-white shadow-sm shadow-sky-500/30';
+          btnStructured.className = 'px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition text-slate-400 hover:text-white';
+          sectionNatural.classList.remove('hidden');
+          sectionStructured.classList.add('hidden');
+          const input = document.getElementById('naturalQueryInput');
+          if (input) input.focus();
+        } else {
+          btnStructured.className = 'px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition bg-sky-500 text-white shadow-sm shadow-sky-500/30';
+          btnNatural.className = 'px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition text-slate-400 hover:text-white';
+          sectionStructured.classList.remove('hidden');
+          sectionNatural.classList.add('hidden');
+        }
+        lucide.createIcons();
+      }
+
+      function fillNaturalPrompt(text) {
+        const input = document.getElementById('naturalQueryInput');
+        if (input) {
+          input.value = text;
+          input.focus();
+        }
+      }
+
+      // Check if server is running with an automatic key
+      async function checkServerStatus() {
+        try {
+          const res = await fetch('/api/health');
+          if (res.ok) {
+            const data = await res.json();
+            if (data.hasServerKey) {
+              serverHasKey = true;
+              applyServerFreeMode(true);
+              return;
+            }
+          }
+        } catch (_) {}
+        applyServerFreeMode(false);
+      }
+
+      function applyServerFreeMode(isActive) {
+        serverHasKey = isActive;
+        const banner = document.getElementById('serverKeyActiveBanner');
+        const inputContainer = document.getElementById('clientKeyInputContainer');
+        const dot = document.getElementById('apiKeyDot');
+        const label = document.getElementById('apiKeyLabel');
+
+        if (isActive) {
+          if (banner) banner.classList.remove('hidden');
+          if (inputContainer) inputContainer.classList.add('hidden');
+          if (dot) dot.className = 'w-2 h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50';
+          if (label) label.textContent = 'Mode Gratuit Actif';
+        } else {
+          if (banner) banner.classList.add('hidden');
+          if (inputContainer) inputContainer.classList.remove('hidden');
+          updateApiKeyBadge(Boolean(localStorage.getItem(STORAGE_KEY)));
+        }
+        lucide.createIcons();
+      }
+
+      function toggleCustomKeySection() {
+        const inputContainer = document.getElementById('clientKeyInputContainer');
+        const toggleBtn = document.getElementById('toggleCustomKeyBtn');
+        if (!inputContainer) return;
+
+        if (inputContainer.classList.contains('hidden')) {
+          inputContainer.classList.remove('hidden');
+          if (toggleBtn) toggleBtn.textContent = 'Masquer le champ';
+        } else {
+          inputContainer.classList.add('hidden');
+          if (toggleBtn) toggleBtn.textContent = 'Clé personnalisée ?';
+        }
+        lucide.createIcons();
+      }
+
+      // API Key Management
+      function initApiKey() {
+        const storedKey = localStorage.getItem(STORAGE_KEY) || '';
+        const input = document.getElementById('apiKeyInput');
+        const modalInput = document.getElementById('modalApiKeyInput');
+
+        if (storedKey) {
+          if (input) input.value = storedKey;
+          if (modalInput) modalInput.value = storedKey;
+          updateApiKeyBadge(true);
+        } else {
+          updateApiKeyBadge(false);
+        }
+      }
+
+      function handleApiKeyChange(val) {
+        const trimmed = val.trim();
+        if (trimmed) {
+          localStorage.setItem(STORAGE_KEY, trimmed);
+          updateApiKeyBadge(true);
+        } else {
+          localStorage.removeItem(STORAGE_KEY);
+          updateApiKeyBadge(serverHasKey);
+        }
+      }
+
+      function updateApiKeyBadge(isValid) {
+        const dot = document.getElementById('apiKeyDot');
+        const label = document.getElementById('apiKeyLabel');
+        if (!dot || !label) return;
+
+        if (serverHasKey) {
+          dot.className = 'w-2 h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50';
+          label.textContent = 'Mode Gratuit Actif';
+        } else if (isValid) {
+          dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+          label.textContent = 'Clé API active';
+        } else {
+          dot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-pulse';
+          label.textContent = 'Clé API requise';
+        }
+      }
+
+      function toggleKeyVisibility() {
+        const input = document.getElementById('apiKeyInput');
+        const btn = document.getElementById('toggleKeyVisibilityBtn');
+        if (!input || !btn) return;
+
+        if (input.type === 'password') {
+          input.type = 'text';
+          btn.textContent = 'Masquer';
+        } else {
+          input.type = 'password';
+          btn.textContent = 'Afficher';
+        }
+      }
+
+      function toggleApiKeyModal(show) {
+        const modal = document.getElementById('apiKeyModal');
+        const modalInput = document.getElementById('modalApiKeyInput');
+        if (show) {
+          modal.classList.remove('hidden');
+          modal.classList.add('flex');
+          if (modalInput) modalInput.value = localStorage.getItem(STORAGE_KEY) || '';
+        } else {
+          modal.classList.add('hidden');
+          modal.classList.remove('flex');
+        }
+        lucide.createIcons();
+      }
+
+      function saveModalApiKey() {
+        const modalInput = document.getElementById('modalApiKeyInput');
+        const val = modalInput ? modalInput.value.trim() : '';
+        if (val) {
+          localStorage.setItem(STORAGE_KEY, val);
+          const input = document.getElementById('apiKeyInput');
+          if (input) input.value = val;
+          updateApiKeyBadge(true);
+          toggleApiKeyModal(false);
+          hideError();
+        } else {
+          alert('Veuillez entrer une clé valide.');
+        }
+      }
+
+      // UI View Switches
+      function showScreen(screen) {
+        const form = document.getElementById('screenForm');
+        const loading = document.getElementById('screenLoading');
+        const dashboard = document.getElementById('screenDashboard');
+        const headerNewSearchBtn = document.getElementById('headerNewSearchBtn');
+
+        form.classList.add('hidden');
+        loading.classList.add('hidden');
+        dashboard.classList.add('hidden');
+        headerNewSearchBtn.classList.add('hidden');
+        headerNewSearchBtn.classList.remove('flex');
+
+        if (screen === 'form') {
+          form.classList.remove('hidden');
+        } else if (screen === 'loading') {
+          loading.classList.remove('hidden');
+          startLoadingAnimation();
+        } else if (screen === 'dashboard') {
+          dashboard.classList.remove('hidden');
+          headerNewSearchBtn.classList.remove('hidden');
+          headerNewSearchBtn.classList.add('flex');
+          stopLoadingAnimation();
+        }
+
+        lucide.createIcons();
+      }
+
+      function handleNewSearch() {
+        showScreen('form');
+        hideError();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+
+      // Loading Animation Cycle
+      function startLoadingAnimation() {
+        const statusEl = document.getElementById('loadingStatusText');
+        const messages = [
+          'Initialisation de l\'algorithme d\'optimisation...',
+          'Analyse des meilleures routes et liaisons aériennes...',
+          'Sélection des étapes incontournables et pépites locales...',
+          'Optimisation journalière et calcul des coordonnées GPS...',
+          'Génération des conseils pratiques et mise en forme...'
+        ];
+        let idx = 0;
+        statusEl.textContent = messages[0];
+
+        if (loadingInterval) clearInterval(loadingInterval);
+        loadingInterval = setInterval(() => {
+          idx = (idx + 1) % messages.length;
+          statusEl.textContent = messages[idx];
+        }, 2200);
+      }
+
+      function stopLoadingAnimation() {
+        if (loadingInterval) {
+          clearInterval(loadingInterval);
+          loadingInterval = null;
+        }
+      }
+
+      // Error Handling
+      function showError(message) {
+        const banner = document.getElementById('errorBanner');
+        const msgEl = document.getElementById('errorMessage');
+        if (banner && msgEl) {
+          msgEl.textContent = message;
+          banner.classList.remove('hidden');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        lucide.createIcons();
+      }
+
+      function parseRobustJson(text) {
+        if (!text || typeof text !== 'string') {
+          throw new Error('Réponse vide reçue du modèle IA');
+        }
+
+        let cleaned = text.trim();
+        cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+
+        try {
+          return JSON.parse(cleaned);
+        } catch (initialErr) {
+          const firstBrace = cleaned.indexOf('{');
+          if (firstBrace !== -1) {
+            let depth = 0;
+            let inString = false;
+            let escape = false;
+
+            for (let i = firstBrace; i < cleaned.length; i++) {
+              const char = cleaned[i];
+              if (escape) {
+                escape = false;
+                continue;
+              }
+              if (char === '\\') {
+                escape = true;
+                continue;
+              }
+              if (char === '"') {
+                inString = !inString;
+                continue;
+              }
+              if (!inString) {
+                if (char === '{') {
+                  depth++;
+                } else if (char === '}') {
+                  depth--;
+                  if (depth === 0) {
+                    const slice = cleaned.slice(firstBrace, i + 1);
+                    try {
+                      return JSON.parse(slice);
+                    } catch (innerErr) {
+                      try {
+                        const sanitized = slice.replace(/,\s*([}\]])/g, '$1');
+                        return JSON.parse(sanitized);
+                      } catch (_) {
+                        break;
+                      }
+                    }
+                  }
+                }
+              }
+            }
+
+            const lastBrace = cleaned.lastIndexOf('}');
+            if (lastBrace > firstBrace) {
+              const candidate = cleaned.slice(firstBrace, lastBrace + 1);
+              try {
+                return JSON.parse(candidate);
+              } catch (e2) {
+                try {
+                  const sanitized = candidate.replace(/,\s*([}\]])/g, '$1');
+                  return JSON.parse(sanitized);
+                } catch (_) {}
+              }
+            }
+          }
+
+          throw initialErr;
+        }
+      }
+
+      function hideError() {
+        const banner = document.getElementById('errorBanner');
+        if (banner) {
+          banner.classList.add('hidden');
+        }
+      }
+
+      function retryGeneration() {
+        hideError();
+        if (lastFormPayload) {
+          executeTripGeneration(lastFormPayload);
+        } else {
+          showScreen('form');
+        }
+      }
+
+      // Form Submission
+      function handleFormSubmit(e) {
+        e.preventDefault();
+        hideError();
+
+        const apiKeyInput = document.getElementById('apiKeyInput');
+        const userKey = (apiKeyInput ? apiKeyInput.value.trim() : '') || localStorage.getItem(STORAGE_KEY) || '';
+
+        // If neither server key nor user key is available, prompt the user
+        if (!serverHasKey && !userKey) {
+          showError("Clé d'API requise en mode statique. Obtenez votre clé 100% gratuite (sans carte bancaire) sur Google AI Studio ou activez le serveur pour démarrer.");
+          if (apiKeyInput) apiKeyInput.focus();
+          return;
+        }
+
+        if (currentSearchMode === 'natural') {
+          const naturalInput = document.getElementById('naturalQueryInput');
+          const naturalQuery = naturalInput ? naturalInput.value.trim() : '';
+
+          if (!naturalQuery) {
+            showError("Veuillez saisir votre projet de voyage en une phrase pour lancer la planification.");
+            if (naturalInput) naturalInput.focus();
+            return;
+          }
+
+          lastFormPayload = {
+            apiKey: userKey,
+            queryMode: 'natural',
+            naturalQuery
+          };
+        } else {
+          const departureCity = document.getElementById('departureCity').value.trim() || 'Paris';
+          const destinations = document.getElementById('destinations').value.trim() || 'Monde';
+          const durationDays = parseInt(document.getElementById('durationDays').value, 10) || 7;
+          const datesText = document.getElementById('datesText').value.trim() || 'Flexible';
+          const style = document.getElementById('style').value;
+          const budgetEstimate = document.getElementById('budgetEstimate').value;
+          const customPreferences = document.getElementById('customPreferences').value.trim();
+
+          lastFormPayload = {
+            apiKey: userKey,
+            queryMode: 'structured',
+            departureCity,
+            destinations,
+            durationDays,
+            datesText,
+            style,
+            budgetEstimate,
+            customPreferences
+          };
+        }
+
+        executeTripGeneration(lastFormPayload);
+      }
+
+      // Main Generation Call (Dual-Mode: Server-Side Automatic Proxy or Client-Side Gemini)
+      async function executeTripGeneration(payload) {
+        showScreen('loading');
+
+        try {
+          // Priority 1: Use server proxy if server has key configured
+          if (serverHasKey) {
+            const serverRes = await fetch('/api/generate-trip', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+
+            if (serverRes.ok) {
+              const tripData = await serverRes.json();
+              if (!tripData.itinerary || !Array.isArray(tripData.itinerary) || tripData.itinerary.length === 0) {
+                throw new Error("L'itinéraire généré est incomplet. Veuillez relancer la génération.");
+              }
+              currentTripData = tripData;
+              renderDashboard(tripData);
+              showScreen('dashboard');
+              return;
+            } else {
+              let serverErrMsg = '';
+              try {
+                const errJson = await serverRes.json();
+                serverErrMsg = errJson.error?.message;
+              } catch (_) {}
+              
+              // If server failed and no client key exists, throw server error
+              if (!payload.apiKey) {
+                throw new Error(serverErrMsg || `Erreur du serveur de génération (${serverRes.status})`);
+              }
+              // Otherwise continue to fallback client call
+            }
+          }
+
+          // Priority 2: Client-side direct call to Gemini (for GitHub Pages / Standalone HTML)
+          if (!payload.apiKey) {
+            throw new Error("Clé API Google Gemini requise pour la génération client-side.");
+          }
+
+          let promptText = '';
+          if (payload.queryMode === 'natural') {
+            promptText = `Tu es un expert planificateur de voyage et conseiller en logistique touristique.
+L'utilisateur a exprimé son souhait de voyage sous forme libre et naturelle en français :
+"${payload.naturalQuery}"
+
+Consignes impératives d'analyse et de planification :
+1. Analyse minutieusement la demande libre pour extraire automatiquement :
+   - La ville ou région de départ (si non mentionnée, déduis la plus logique ou Paris par défaut).
+   - La ou les destinations (pays, région, département, ville).
+   - Le nombre de jours précis de l'itinéraire (si l'utilisateur demande par exemple 15 jours, la durée est très exactement de 15 jours).
+   - La saison, le mois ou la période de l'année (ex: décembre, été, etc.).
+   - Le style de voyage et les préférences sous-jacentes.
+
+2. EXIGENCE ABSOLUE D'EXHAUSTIVITÉ (GÉNÉRER TOUS LES JOURS SANS EXCEPTION) :
+   - L'array "itinerary" DOIT OBLIGATOIREMENT comporter TOUS LES JOURS du séjour, du Jour 1 jusqu'au Jour N (par exemple, pour 15 jours, l'array "itinerary" DOIT CONTENIR TRÈS EXACTEMENT 15 ÉLÉMENTS DISTINCTS, du Jour 1 au Jour 15).
+   - IL EST STRICTEMENT INTERDIT de ne générer que 2 ou 3 jours d'exemples ou de résumer. Chaque jour doit être présent.
+   - Pour garantir que l'ensemble des journées soit généré sans être tronqué, reste concis dans les textes : 1-2 phrases pour le matin, 1 phrase pour le déjeuner, 1-2 phrases pour l'après-midi, 1 phrase pour le soir.
+
+3. RÈGLE IMPÉRATIVE DU DERNIER JOUR (JOUR OÙ L'ON DOIT ÊTRE RENTRÉS AU DOMICILE) :
+   - Le TOUT DERNIER JOUR (Jour N) DOIT IMPÉRATIVEMENT être le jour du RETOUR et de la RENTRÉE CHEZ SOI au domicile.
+   - L'intitulé de ce dernier jour doit être explicite (ex: "Jour N : Retour à [Ville de départ] / Rentrée au domicile").
+   - Ce jour est dédié au check-out, derniers préparatifs, transfert aéroport/gare, vol/trajet retour, et arrivée chez soi le soir. Les voyageurs doivent être rentrés à la fin de cette journée.
+
+4. RÈGLE SUR LES VOLS LONG-COURRIER (MÊMES AÉROPORTS ALLER ET RETOUR) :
+   - Pour les voyages long-courrier (intercontinentaux / vols lointains), considère impérativement que l'aller et le retour internationaux se font depuis les MÊMES aéroports principaux :
+     * Même aéroport de départ et d'arrivée dans la ville d'origine (ex: départ CDG à l'aller, arrivée CDG au retour).
+     * Même aéroport hub international dans le pays de destination (ex: arrivée à Tokyo-Haneda/Narita à l'aller, et départ du vol long-courrier retour également depuis Tokyo-Haneda/Narita).
+     * Si le séjour s'achève dans une autre ville intérieure, prévois la liaison intérieure intermédiaire (train rapide ou vol intérieur) pour rejoindre ce même aéroport hub principal.
+
+5. DÉCALAGE HORAIRE CONCRÉTISÉ ("timeZoneDifference") :
+   - Formule le décalage horaire de manière très concrète avec un exemple parlant comparant l'heure de départ et l'heure sur place.
+   - Exemple obligatoire : "+6h (lorsqu'il est 12h00 à Toulouse, il est 18h00 à Tokyo)" ou "-5h (à 12h00 à Paris, il est 07h00 à New York)" ou "0h (même fuseau horaire qu'à [Ville départ])".
+
+6. DÉTAIL DU BUDGET ("budgetBreakdown") :
+   - Fournis une estimation ventilée réaliste par poste de dépense pour permettre d'afficher le détail du budget : transports/vols, hébergement, repas, activités et visites, transports locaux.
+
+7. PRÉCONISATIONS HORAIRES :
+   - Préconise systématiquement un départ le matin (vol ou train matinal) à l'aller pour rentabiliser la première journée.
+   - Préconise systématiquement un retour en soirée depuis la dernière étape pour profiter au maximum du dernier jour.
+
+8. RÈGLE TERMINOLOGIQUE STRICTE : N'utilise le mot "vol" que lorsqu'il s'agit explicitement d'un déplacement en avion. Pour tout trajet terrestre (voiture, train, TER, TGV, bus, road trip), utilise exclusivement le mot "trajet".
+
+9. Pour chaque jour, fournis des coordonnées GPS exactes et réalistes (latitude et longitude en décimales) correspondant au lieu principal visité ce jour-là.
+
+Tu DOIS impérativement renvoyer UNIQUEMENT un objet JSON valide correspondant EXACTEMENT au schéma suivant, sans texte introductif, ni markdown :
+{
+  "title": "Titre inspirant et personnalisé du voyage",
+  "departureCity": "Ville de départ extraite",
+  "destinations": ["Destination(s) extraite(s)"],
+  "datesText": "Période détectée",
+  "durationDays": 15,
+  "style": "Style détecté ou adapté",
+  "budgetEstimate": "Estimation globale de budget (ex: 1400€ - 1700€ / pers)",
+  "budgetBreakdown": {
+    "totalPerPerson": "1400€ - 1700€ / pers",
+    "flights": "650€ - 850€ (Vols long-courrier aller-retour depuis les mêmes aéroports)",
+    "accommodation": "450€ - 600€ (Hébergements 3*, ~35€-45€/nuit/pers)",
+    "food": "300€ - 400€ (Repas et spécialités locales, ~25€/jour)",
+    "activities": "150€ - 200€ (Entrées monuments, musées et pass)",
+    "localTransport": "100€ - 150€ (Pass train / métro / transferts)",
+    "tipsAndAdvice": "Réserver les billets 3 mois à l'avance et privilégier les cartes de transport locales."
+  },
+  "destinationBreakdown": [
+    {
+      "name": "Étape 1 (ex: Première destination)",
+      "daysCount": 4,
+      "percentage": 40,
+      "dayRange": "J1 - J4",
+      "highlights": "Attraction A, Attraction B"
+    }
+  ],
+  "climateAndBestTime": "Recommandations météorologiques détaillées et vêtements recommandés pour cette période",
+  "timeZoneDifference": "+6h (à 12h00 à Ville Départ, il est 18h00 à Destination)",
+  "flightDetails": {
+    "transportType": "avion ou voiture ou train ou mixte",
+    "outbound": "Détails trajet/vol aller (avec mention départ matin conseillé depuis la ville de départ vers la 1ère étape)",
+    "inbound": "Détails trajet/vol retour (avec mention retour soir conseillé pour rentrer au domicile)",
+    "lastCity": "Nom de la dernière ville visitée",
+    "layovers": "Direct ou X escale(s) / Trajet direct",
+    "totalDuration": "Durée estimée du trajet/vol",
+    "scheduleTip": "Départ le matin et retour le soir préconisés pour maximiser votre séjour.",
+    "intermediateConnections": [
+      {
+        "segment": "Liaison Étape A -> Étape B",
+        "from": "Ville A",
+        "to": "Ville B",
+        "type": "Vol intérieur / TGV / Train / Route",
+        "duration": "~2h15",
+        "recommendedTime": "Départ matin conseillé",
+        "details": "Détails pratiques sur la liaison"
+      }
+    ]
+  },
+  "localEvents": [
+    "Conseil pratique ou particularité locale 1",
+    "Conseil transport, itinéraire ou réservation 2",
+    "Spécialité culinaire ou activité saisonnière 3"
+  ],
+  "itinerary": [
+    {
+      "day": 1,
+      "title": "Titre évocateur de la journée",
+      "description": "Synthèse vivante de la journée",
+      "morning": "Activités détaillées du matin (1-2 phrases)",
+      "lunch": "Conseils déjeuner et spécialités (1 phrase)",
+      "afternoon": "Visites de l'après-midi (1-2 phrases)",
+      "evening": "Dîner et ambiance de soirée (1 phrase)",
+      "locationName": "Nom précis du lieu principal",
+      "coordinates": { "lat": 44.4447, "lng": 1.4326 }
+    }
+  ]
+}`;
+          } else {
+            promptText = `Tu es un expert planificateur de voyage international et conseiller en logistique touristique.
+L'utilisateur souhaite planifier un voyage complet selon les paramètres suivants :
+- Ville de départ : "${payload.departureCity}"
+- Destination(s) : "${payload.destinations}"
+- Durée en jours : ${payload.durationDays}
+- Période / dates : "${payload.datesText}"
+- Style de voyage : "${payload.style}"
+- Budget estimé : "${payload.budgetEstimate}"
+${payload.customPreferences ? `- Souhaits particuliers & rythme : "${payload.customPreferences}"` : ''}
+
+Consignes impératives de planification :
+1. EXIGENCE ABSOLUE D'EXHAUSTIVITÉ (GÉNÉRER TRÈS EXACTEMENT LES ${payload.durationDays} JOURS) :
+   - L'array "itinerary" DOIT OBLIGATOIREMENT comporter TRÈS EXACTEMENT ${payload.durationDays} OBJETS (un pour chaque jour, du Jour 1 jusqu'au Jour ${payload.durationDays} sans aucune omission).
+   - IL EST STRICTEMENT INTERDIT de ne générer que 2 ou 3 jours d'exemple ! Les ${payload.durationDays} jours doivent tous être présents.
+   - Pour que la réponse reste dans les limites de tokens, rédige des descriptions directes et rythmées (1 à 2 phrases par créneau : morning, lunch, afternoon, evening).
+
+2. RÈGLE IMPÉRATIVE DU DERNIER JOUR (JOUR OÙ L'ON DOIT ÊTRE RENTRÉS AU DOMICILE) :
+   - Le TOUT DERNIER JOUR (Jour ${payload.durationDays}) DOIT IMPÉRATIVEMENT être le jour du RETOUR et de la RENTRÉE AU DOMICILE à ${payload.departureCity}.
+   - Intitule expressément le Jour ${payload.durationDays} : "Jour ${payload.durationDays} : Retour à ${payload.departureCity} et fin du voyage".
+   - Le déroulé du Jour ${payload.durationDays} est consacré aux derniers préparatifs, transfert aéroport/gare, voyage de retour et arrivée chez soi le soir.
+
+3. RÈGLE SUR LES VOLS LONG-COURRIER (MÊMES AÉROPORTS ALLER ET RETOUR) :
+   - Pour les vols long-courrier, l'aller et le retour internationaux se font obligatoirement depuis les MÊMES aéroports principaux :
+     * Même aéroport de départ et d'arrivée dans la ville d'origine ${payload.departureCity}.
+     * Même aéroport hub international dans le pays visité (ex: Haneda/Narita pour Tokyo).
+     * Les liaisons intermédiaires intérieures assurent le retour vers ce hub le dernier jour ou la veille si nécessaire.
+
+4. DÉCALAGE HORAIRE CONCRÉTISÉ ("timeZoneDifference") :
+   - Formule le décalage horaire sous forme concrète avec un exemple parlant.
+   - Exemple obligatoire : "+6h (à 12h00 à ${payload.departureCity}, il est 18h00 à ${payload.destinations})" ou "-5h (à 12h00 à ${payload.departureCity}, il est 07h00 à ${payload.destinations})" ou "0h (même fuseau horaire)".
+
+5. DÉTAIL DU BUDGET ("budgetBreakdown") :
+   - Fournis un détail réaliste et précis du budget poste par poste : vols/transports, hébergement, repas, activités et transports locaux.
+
+6. PRÉCONISATIONS HORAIRES ET LOGISTIQUE DES TRANSPORTS :
+   - Préconise systématiquement un départ le matin (vol ou train matinal) pour rentabiliser la première journée.
+   - Préconise systématiquement un retour en soirée ou fin de journée depuis la dernière étape pour profiter au maximum du dernier jour.
+
+7. RÈGLE TERMINOLOGIQUE STRICTE : N'utilise le mot "vol" que lorsqu'il s'agit explicitement d'un déplacement en avion. Pour les trajets terrestres (voiture, train, bus, road trip), utilise exclusivement le mot "trajet".
+
+8. Pour chaque jour, fournis des coordonnées GPS exactes et réalistes (latitude et longitude en décimales).
+
+Tu DOIS impérativement renvoyer UNIQUEMENT un objet JSON valide correspondant EXACTEMENT au schéma suivant, sans texte introductif, ni markdown :
+{
+  "title": "Titre inspirant et personnalisé du voyage",
+  "departureCity": "${payload.departureCity}",
+  "destinations": ["${payload.destinations}"],
+  "datesText": "${payload.datesText}",
+  "durationDays": ${payload.durationDays},
+  "style": "${payload.style}",
+  "budgetEstimate": "${payload.budgetEstimate}",
+  "budgetBreakdown": {
+    "totalPerPerson": "${payload.budgetEstimate} / pers",
+    "flights": "Estimation vols aller-retour depuis les mêmes aéroports",
+    "accommodation": "Estimation hébergements pour ${payload.durationDays} jours",
+    "food": "Estimation repas et restauration",
+    "activities": "Estimation entrées et activités",
+    "localTransport": "Estimation transports sur place",
+    "tipsAndAdvice": "Conseils pratiques pour maîtriser le budget"
+  },
+  "destinationBreakdown": [
+    {
+      "name": "Étape 1 (ex: Première destination)",
+      "daysCount": 3,
+      "percentage": 40,
+      "dayRange": "J1 - J3",
+      "highlights": "Lieu A, Lieu B"
+    }
+  ],
+  "climateAndBestTime": "Recommandations météorologiques détaillées et vêtements recommandés pour cette période",
+  "timeZoneDifference": "+Xh (à 12h00 à ${payload.departureCity}, il est XXh à ${payload.destinations})",
+  "flightDetails": {
+    "transportType": "avion ou voiture ou train ou mixte",
+    "outbound": "Détails trajet/vol aller avec départ matin préconisé depuis ${payload.departureCity}",
+    "inbound": "Détails trajet/vol retour avec retour soir préconisé pour rentrer à ${payload.departureCity}",
+    "lastCity": "Nom de la dernière ville visitée",
+    "layovers": "Direct ou X escale(s) / Trajet direct",
+    "totalDuration": "~Xh de trajet/vol",
+    "scheduleTip": "Départ le matin et retour le soir préconisés pour optimiser votre séjour.",
+    "intermediateConnections": [
+      {
+        "segment": "Liaison Étape 1 -> Étape 2",
+        "from": "Ville 1",
+        "to": "Ville 2",
+        "type": "Vol intérieur / TGV / Train / Route",
+        "duration": "~2h",
+        "recommendedTime": "Départ matin conseillé",
+        "details": "Conseils pratiques"
+      }
+    ]
+  },
+  "localEvents": [
+    "Conseil pratique ou coutume locale 1",
+    "Conseil transport ou billet à réserver à l'avance 2",
+    "Recommandation culinaire ou événement saisonnier 3"
+  ],
+  "itinerary": [
+    {
+      "day": 1,
+      "title": "Titre évocateur de la journée",
+      "description": "Synthèse de la journée",
+      "morning": "Visites et découvertes du matin (1-2 phrases)",
+      "lunch": "Recommandation culinaire et pause déjeuner (1 phrase)",
+      "afternoon": "Activités et visites de l'après-midi (1-2 phrases)",
+      "evening": "Dîner et soirée (1 phrase)",
+      "locationName": "Nom précis du lieu ou quartier principal",
+      "coordinates": { "lat": 48.8566, "lng": 2.3522 }
+    }
+  ]
+}`;
+          }
+
+          const candidateModels = ['gemini-3.8-flash', 'gemini-3.1-flash-lite'];
+          let lastClientErr = null;
+          let tripData = null;
+
+          for (const model of candidateModels) {
+            try {
+              const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(payload.apiKey)}`;
+              const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  contents: [
+                    {
+                      role: 'user',
+                      parts: [{ text: promptText }]
+                    }
+                  ],
+                  generationConfig: {
+                    response_mime_type: 'application/json',
+                    max_output_tokens: 8192
+                  }
+                })
+              });
+
+              if (!response.ok) {
+                let errDetail = `Code ${response.status} (${response.statusText})`;
+                try {
+                  const errBody = await response.json();
+                  if (errBody.error && errBody.error.message) {
+                    errDetail = errBody.error.message;
+                  }
+                } catch (_) {}
+
+                if (response.status === 400 || response.status === 403) {
+                  throw new Error(`Erreur d'authentification Google Gemini : ${errDetail}. Vérifiez que votre clé API est valide.`);
+                } else if (response.status === 429) {
+                  throw new Error(`Quota de requêtes atteint sur ${model}.`);
+                } else {
+                  throw new Error(`Erreur Google Gemini (${model}) : ${errDetail}`);
+                }
+              }
+
+              const resData = await response.json();
+              if (!resData.candidates || !resData.candidates[0] || !resData.candidates[0].content || !resData.candidates[0].content.parts) {
+                throw new Error("L'API Gemini n'a pas renvoyé de contenu exploitable.");
+              }
+
+              const rawText = resData.candidates[0].content.parts[0].text;
+              tripData = parseRobustJson(rawText);
+
+              if (tripData && tripData.itinerary && Array.isArray(tripData.itinerary) && tripData.itinerary.length > 0) {
+                break;
+              }
+            } catch (err) {
+              console.warn(`Model ${model} failed, trying next candidate:`, err);
+              lastClientErr = err;
+            }
+          }
+
+          if (!tripData) {
+            throw lastClientErr || new Error("Impossible de générer l'itinéraire. Veuillez patienter 30 secondes et réessayer.");
+          }
+
+          if (!tripData.itinerary || !Array.isArray(tripData.itinerary) || tripData.itinerary.length === 0) {
+            throw new Error("L'itinéraire généré est incomplet. Veuillez relancer la génération.");
+          }
+
+          currentTripData = tripData;
+          renderDashboard(tripData);
+          showScreen('dashboard');
+
+        } catch (error) {
+          console.error("Optitrip Generation Error:", error);
+          showScreen('form');
+          showError(error.message || "Une erreur inattendue est survenue lors de l'appel à l'API Gemini.");
+        }
+      }
+
+      // ==============================================================
+      // VOYAGE MULTIDESTINATION : ANALYSE & SCHÉMA DE TEMPS RELATIF
+      // ==============================================================
+      const MULTI_DEST_THEMES = [
+        {
+          name: 'sky',
+          barGradient: 'from-sky-500 to-sky-400',
+          badgeBg: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
+          dotBg: 'bg-sky-400',
+          cardBorder: 'border-sky-500/30 hover:border-sky-500/60',
+          pillBg: 'bg-sky-500/20 text-sky-300',
+          btnBg: 'bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border-sky-500/30'
+        },
+        {
+          name: 'emerald',
+          barGradient: 'from-emerald-500 to-emerald-400',
+          badgeBg: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+          dotBg: 'bg-emerald-400',
+          cardBorder: 'border-emerald-500/30 hover:border-emerald-500/60',
+          pillBg: 'bg-emerald-500/20 text-emerald-300',
+          btnBg: 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+        },
+        {
+          name: 'violet',
+          barGradient: 'from-violet-500 to-violet-400',
+          badgeBg: 'bg-violet-500/15 text-violet-300 border-violet-500/30',
+          dotBg: 'bg-violet-400',
+          cardBorder: 'border-violet-500/30 hover:border-violet-500/60',
+          pillBg: 'bg-violet-500/20 text-violet-300',
+          btnBg: 'bg-violet-500/10 hover:bg-violet-500/20 text-violet-300 border-violet-500/30'
+        },
+        {
+          name: 'amber',
+          barGradient: 'from-amber-500 to-amber-400',
+          badgeBg: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+          dotBg: 'bg-amber-400',
+          cardBorder: 'border-amber-500/30 hover:border-amber-500/60',
+          pillBg: 'bg-amber-500/20 text-amber-300',
+          btnBg: 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/30'
+        },
+        {
+          name: 'rose',
+          barGradient: 'from-rose-500 to-rose-400',
+          badgeBg: 'bg-rose-500/15 text-rose-300 border-rose-500/30',
+          dotBg: 'bg-rose-400',
+          cardBorder: 'border-rose-500/30 hover:border-rose-500/60',
+          pillBg: 'bg-rose-500/20 text-rose-300',
+          btnBg: 'bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border-rose-500/30'
+        },
+        {
+          name: 'teal',
+          barGradient: 'from-teal-500 to-teal-400',
+          badgeBg: 'bg-teal-500/15 text-teal-300 border-teal-500/30',
+          dotBg: 'bg-teal-400',
+          cardBorder: 'border-teal-500/30 hover:border-teal-500/60',
+          pillBg: 'bg-teal-500/20 text-teal-300',
+          btnBg: 'bg-teal-500/10 hover:bg-teal-500/20 text-teal-300 border-teal-500/30'
+        }
+      ];
+
+      function computeDestinationBreakdown(data) {
+        if (!data || !data.itinerary || !Array.isArray(data.itinerary) || data.itinerary.length === 0) {
+          return null;
+        }
+
+        const totalDays = data.itinerary.length;
+        if (totalDays < 2) return null;
+
+        // 1. Priorité aux données structurées "destinationBreakdown" si déjà fournies
+        if (Array.isArray(data.destinationBreakdown) && data.destinationBreakdown.length >= 2) {
+          return data.destinationBreakdown.map((item, idx) => {
+            const count = Math.max(1, parseInt(item.daysCount, 10) || 1);
+            const pct = Math.max(5, parseInt(item.percentage, 10) || Math.round((count / totalDays) * 100));
+            const firstMatch = String(item.dayRange || '').match(/(\d+)/);
+            const firstDay = firstMatch ? parseInt(firstMatch[1], 10) : (idx * count + 1);
+            return {
+              name: item.name || `Étape ${idx + 1}`,
+              daysCount: count,
+              percentage: pct,
+              dayRange: item.dayRange || `J${firstDay} - J${firstDay + count - 1}`,
+              firstDay: firstDay,
+              lastDay: firstDay + count - 1,
+              highlights: item.highlights || ''
+            };
+          });
+        }
+
+        // 2. Extraire la liste des destinations candidates depuis data.destinations
+        let candidateDestinations = [];
+        if (Array.isArray(data.destinations)) {
+          candidateDestinations = data.destinations.map(d => String(d).trim()).filter(Boolean);
+        } else if (typeof data.destinations === 'string') {
+          candidateDestinations = data.destinations
+            .split(/[,;\/&+]|\bet\b|\band\b/i)
+            .map(d => d.trim())
+            .filter(d => d.length > 1);
+        }
+
+        // 3. Associer chaque journée à une étape/destination
+        const dayAssignments = data.itinerary.map((dayItem, idx) => {
+          const dayNum = dayItem.day || (idx + 1);
+          const title = dayItem.title || '';
+          const location = dayItem.locationName || '';
+          const desc = dayItem.description || '';
+          const fullText = `${title} ${location} ${desc}`.toLowerCase();
+
+          // Champ direct "destination" si présent
+          if (dayItem.destination && typeof dayItem.destination === 'string') {
+            return { dayNum, destName: dayItem.destination.trim(), location };
+          }
+
+          // Test de correspondance avec les destinations candidates
+          for (const cand of candidateDestinations) {
+            const cleanCand = cand.toLowerCase();
+            if (fullText.includes(cleanCand)) {
+              return { dayNum, destName: cand, location };
+            }
+          }
+
+          // Extraction du préfixe de ville dans locationName (ex: "Rome - Colisée" -> "Rome")
+          if (location) {
+            const parts = location.split(/[-–—:,/()]/);
+            const cityCand = parts[0].trim();
+            if (cityCand.length >= 2 && !/\b(jour|départ|retour|rentrée|vol|transfert|trajet)\b/i.test(cityCand)) {
+              return { dayNum, destName: cityCand, location };
+            }
+          }
+
+          return { dayNum, destName: null, location };
+        });
+
+        // 4. Remplir les jours non assignés par continuité avec l'étape précédente ou suivante
+        for (let i = 0; i < dayAssignments.length; i++) {
+          if (!dayAssignments[i].destName) {
+            if (i > 0 && dayAssignments[i - 1].destName) {
+              dayAssignments[i].destName = dayAssignments[i - 1].destName;
+            } else if (i + 1 < dayAssignments.length && dayAssignments[i + 1].destName) {
+              dayAssignments[i].destName = dayAssignments[i + 1].destName;
+            } else if (candidateDestinations.length > 0) {
+              dayAssignments[i].destName = candidateDestinations[0];
+            } else {
+              dayAssignments[i].destName = 'Étape principale';
+            }
+          }
+        }
+
+        // 5. Regrouper par destination chronologique
+        const grouped = [];
+        let currentGroup = null;
+
+        dayAssignments.forEach(item => {
+          if (!currentGroup || currentGroup.name.toLowerCase() !== item.destName.toLowerCase()) {
+            currentGroup = {
+              name: item.destName.charAt(0).toUpperCase() + item.destName.slice(1),
+              days: [],
+              locations: []
+            };
+            grouped.push(currentGroup);
+          }
+          currentGroup.days.push(item.dayNum);
+          if (item.location) {
+            const locClean = item.location.replace(/^[^ -]+[-–—]/, '').trim();
+            if (locClean && !currentGroup.locations.includes(locClean)) {
+              currentGroup.locations.push(locClean);
+            }
+          }
+        });
+
+        // Si le regroupement donne 1 seule étape mais que la demande déclarait plusieurs destinations
+        if (grouped.length < 2) {
+          if (candidateDestinations.length >= 2) {
+            const countPerDest = Math.max(1, Math.floor(totalDays / candidateDestinations.length));
+            return candidateDestinations.map((cand, idx) => {
+              const startDay = idx * countPerDest + 1;
+              const isLast = idx === candidateDestinations.length - 1;
+              const endDay = isLast ? totalDays : (idx + 1) * countPerDest;
+              const daysCount = endDay - startDay + 1;
+              const percentage = Math.round((daysCount / totalDays) * 100);
+              return {
+                name: cand,
+                daysCount,
+                percentage,
+                dayRange: `J${startDay} à J${endDay}`,
+                firstDay: startDay,
+                lastDay: endDay,
+                highlights: `Découverte et temps fort de ${cand}`
+              };
+            });
+          }
+          return null; // Pas de multidestination
+        }
+
+        // Calcul des pourcentages et plages
+        return grouped.map((grp) => {
+          const daysCount = grp.days.length;
+          const percentage = Math.round((daysCount / totalDays) * 100);
+          const firstDay = grp.days[0];
+          const lastDay = grp.days[grp.days.length - 1];
+          const dayRange = (firstDay === lastDay) ? `Jour ${firstDay}` : `J${firstDay} à J${lastDay}`;
+          const highlights = grp.locations.slice(0, 3).join(', ') || 'Visites et étapes clés';
+
+          return {
+            name: grp.name,
+            daysCount,
+            percentage,
+            dayRange,
+            firstDay,
+            lastDay,
+            highlights
+          };
+        });
+      }
+
+      function renderMultiDestOverview(data) {
+        const section = document.getElementById('multiDestOverviewSection');
+        if (!section) return;
+
+        const breakdown = computeDestinationBreakdown(data);
+        if (!breakdown || breakdown.length < 2) {
+          section.classList.add('hidden');
+          return;
+        }
+
+        // Afficher la section multidestination
+        section.classList.remove('hidden');
+
+        // Mise à jour des compteurs d'étapes et jours
+        const badgeCount = document.getElementById('multiDestBadgeCount');
+        if (badgeCount) {
+          badgeCount.textContent = `${breakdown.length} étapes`;
+        }
+
+        const totalDaysLabel = document.getElementById('multiDestTotalDaysLabel');
+        const totalDays = data.itinerary ? data.itinerary.length : 0;
+        if (totalDaysLabel) {
+          totalDaysLabel.textContent = `Durée totale : ${totalDays} jours`;
+        }
+
+        // 1. Construction de la barre proportionnelle continue (Temps relatif)
+        const barContainer = document.getElementById('multiDestProgressBar');
+        const legendContainer = document.getElementById('multiDestBarLegend');
+        barContainer.innerHTML = '';
+        legendContainer.innerHTML = '';
+
+        // Ajuster pour assurer un total exact de 100%
+        let sumPct = breakdown.reduce((acc, curr) => acc + curr.percentage, 0);
+        if (sumPct !== 100 && breakdown.length > 0) {
+          breakdown[0].percentage += (100 - sumPct);
+        }
+
+        breakdown.forEach((item, index) => {
+          const theme = MULTI_DEST_THEMES[index % MULTI_DEST_THEMES.length];
+          const segment = document.createElement('div');
+          segment.className = `h-full rounded-lg bg-gradient-to-r ${theme.barGradient} transition-all duration-300 hover:brightness-110 flex items-center justify-center px-2 cursor-pointer shadow-sm relative group`;
+          segment.style.width = `${Math.max(item.percentage, 6)}%`;
+          segment.setAttribute('title', `${item.name} : ${item.daysCount} jour${item.daysCount > 1 ? 's' : ''} (${item.percentage}%) • ${item.dayRange} (Cliquez pour naviguer)`);
+          segment.onclick = () => scrollToDay(item.firstDay);
+
+          if (item.percentage >= 14) {
+            segment.innerHTML = `
+              <span class="text-[11px] font-bold text-white drop-shadow-sm truncate">
+                ${escapeHtml(item.name)} <span class="opacity-90 font-normal hidden sm:inline">(${item.percentage}%)</span>
+              </span>
+            `;
+          } else {
+            segment.innerHTML = `
+              <span class="text-[10px] font-bold text-white drop-shadow-sm">
+                ${item.percentage}%
+              </span>
+            `;
+          }
+          barContainer.appendChild(segment);
+
+          // Puce de Légende
+          const legendItem = document.createElement('div');
+          legendItem.className = 'flex items-center gap-1.5 cursor-pointer hover:opacity-80 transition py-0.5';
+          legendItem.onclick = () => scrollToDay(item.firstDay);
+          legendItem.innerHTML = `
+            <span class="w-2.5 h-2.5 rounded-full ${theme.dotBg} shrink-0"></span>
+            <span class="font-semibold text-slate-200">${escapeHtml(item.name)}</span>
+            <span class="text-slate-400 font-mono text-[11px]">(${item.daysCount}j &bull; ${item.percentage}%)</span>
+          `;
+          legendContainer.appendChild(legendItem);
+        });
+
+        // 2. Construction de la grille des cartes d'étapes (En un coup d'œil)
+        const cardsGrid = document.getElementById('multiDestCardsGrid');
+        cardsGrid.innerHTML = '';
+
+        breakdown.forEach((item, index) => {
+          const theme = MULTI_DEST_THEMES[index % MULTI_DEST_THEMES.length];
+          const card = document.createElement('div');
+          card.className = `bg-slate-950 border ${theme.cardBorder} rounded-xl p-4 flex flex-col justify-between gap-3 transition-all duration-200 hover:-translate-y-0.5 shadow-md`;
+          
+          card.innerHTML = `
+            <div class="space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-md ${theme.pillBg} border border-white/5">
+                  Étape ${index + 1}
+                </span>
+                <span class="text-xs font-mono font-medium text-slate-400 flex items-center gap-1">
+                  <i data-lucide="calendar" class="w-3 h-3 text-sky-400"></i>
+                  ${escapeHtml(item.dayRange)}
+                </span>
+              </div>
+
+              <div>
+                <h4 class="text-base font-bold text-white">${escapeHtml(item.name)}</h4>
+                <div class="flex items-center gap-2 mt-1">
+                  <span class="text-xs font-semibold ${theme.pillBg} px-2 py-0.5 rounded-md">
+                    ${item.daysCount} jour${item.daysCount > 1 ? 's' : ''} sur place
+                  </span>
+                  <span class="text-xs font-bold text-white/90 font-mono">
+                    ${item.percentage}% du séjour
+                  </span>
+                </div>
+              </div>
+
+              <!-- Mini jauge visuelle dans la carte -->
+              <div class="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden">
+                <div class="bg-gradient-to-r ${theme.barGradient} h-full rounded-full" style="width: ${item.percentage}%"></div>
+              </div>
+
+              ${item.highlights ? `
+                <div class="pt-1 border-t border-slate-900 text-xs text-slate-400 flex items-start gap-1.5">
+                  <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5"></i>
+                  <span class="leading-relaxed line-clamp-2">${escapeHtml(item.highlights)}</span>
+                </div>
+              ` : ''}
+            </div>
+
+            <button
+              type="button"
+              onclick="scrollToDay(${item.firstDay})"
+              class="w-full text-xs font-semibold py-2 px-3 rounded-lg ${theme.btnBg} border transition flex items-center justify-center gap-1.5 cursor-pointer mt-1"
+            >
+              <span>Accéder aux journées (${item.dayRange})</span>
+              <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
+            </button>
+          `;
+
+          cardsGrid.appendChild(card);
+        });
+
+        lucide.createIcons();
+      }
+
+      function scrollToDay(dayNum) {
+        switchTab('itinerary');
+        const target = document.getElementById(`itineraryDayCard_${dayNum}`);
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          target.classList.add('ring-2', 'ring-sky-400');
+          setTimeout(() => {
+            target.classList.remove('ring-2', 'ring-sky-400');
+          }, 2200);
+        }
+      }
+
+      // Populate Dashboard with Generated Data
+      function renderDashboard(data) {
+        // Badges & Header
+        document.getElementById('dashTripTitle').textContent = data.title || 'Votre Itinéraire de Voyage';
+        document.getElementById('dashDeparture').textContent = data.departureCity || 'Non spécifié';
+        const destStr = Array.isArray(data.destinations) ? data.destinations.join(', ') : (data.destinations || 'Monde');
+        document.getElementById('dashDestinations').textContent = destStr;
+        document.getElementById('dashDuration').textContent = `${data.durationDays || data.itinerary.length} jours`;
+        document.getElementById('dashStyle').textContent = data.style || 'Sur mesure';
+        
+        const budgetElem = document.getElementById('dashBudget');
+        if (budgetElem) {
+          budgetElem.textContent = data.budgetEstimate || '1500€';
+          budgetElem.setAttribute('title', 'Cliquez pour ouvrir le détail de l\'estimation');
+        }
+
+        // Multidestination visual overview (schéma de répartition du temps)
+        renderMultiDestOverview(data);
+
+        const firstDestCity = Array.isArray(data.destinations) ? data.destinations[0] : (data.destinations || 'destination');
+        const concreteTz = formatConcreteTimezone(data.timeZoneDifference, data.departureCity, firstDestCity);
+        const tzElem = document.getElementById('dashTimeZone');
+        if (tzElem) {
+          tzElem.textContent = concreteTz;
+          tzElem.setAttribute('title', concreteTz);
+        }
+
+        // Flight / Trajet details
+        const flights = data.flightDetails || {};
+        const outboundText = (flights.outbound || '').toLowerCase();
+        const inboundText = (flights.inbound || '').toLowerCase();
+        const transportType = (flights.transportType || '').toLowerCase();
+        const allTransportText = `${transportType} ${outboundText} ${inboundText} ${(flights.layovers || '')}`.toLowerCase();
+
+        // Determine if it is actually a flight (airplane) or ground transport (car, train, road trip, etc.)
+        const isFlight = transportType.includes('avion') ||
+          (/\b(vol|vols|avion|avions|aérien|aérienne|aéroport|aéroports|air france|easyjet|ryanair|transavia|emirates|lufthansa)\b/i.test(allTransportText) &&
+           !/\b(voiture|véhicule|autoroute|route départementale|route nationale|ter|train|sncf|tgv)\b/i.test(outboundText));
+
+        // Update labels and icons dynamically
+        const tabFlightsLabel = document.getElementById('tabFlightsLabel');
+        const tabFlightsIcon = document.getElementById('tabFlightsIcon');
+        const flightHeaderTitle = document.getElementById('flightHeaderTitle');
+        const flightHeaderIcon = document.getElementById('flightHeaderIcon');
+        const flightOutboundLabel = document.getElementById('flightOutboundLabel');
+        const flightOutboundIcon = document.getElementById('flightOutboundIcon');
+        const flightInboundLabel = document.getElementById('flightInboundLabel');
+        const flightInboundIcon = document.getElementById('flightInboundIcon');
+        const flightDurationLabel = document.getElementById('flightDurationLabel');
+        const flightLayoversLabel = document.getElementById('flightLayoversLabel');
+        const dashDepartIcon = document.getElementById('dashDepartIcon');
+
+        if (isFlight) {
+          if (tabFlightsLabel) tabFlightsLabel.textContent = 'Vols & Conseils';
+          if (tabFlightsIcon) tabFlightsIcon.setAttribute('data-lucide', 'plane-takeoff');
+          if (flightHeaderTitle) flightHeaderTitle.textContent = 'Synthèse des Vols & Liaisons Aériennes';
+          if (flightHeaderIcon) flightHeaderIcon.setAttribute('data-lucide', 'plane-takeoff');
+          if (flightOutboundLabel) flightOutboundLabel.textContent = 'Vol Aller';
+          if (flightOutboundIcon) flightOutboundIcon.setAttribute('data-lucide', 'plane-takeoff');
+          if (flightInboundLabel) flightInboundLabel.textContent = 'Vol Retour';
+          if (flightInboundIcon) flightInboundIcon.setAttribute('data-lucide', 'plane-landing');
+          if (flightDurationLabel) flightDurationLabel.textContent = 'Durée de vol';
+          if (flightLayoversLabel) flightLayoversLabel.textContent = 'Escales';
+          if (dashDepartIcon) dashDepartIcon.setAttribute('data-lucide', 'plane-takeoff');
+        } else {
+          if (tabFlightsLabel) tabFlightsLabel.textContent = 'Trajets & Conseils';
+          if (tabFlightsIcon) tabFlightsIcon.setAttribute('data-lucide', 'compass');
+          if (flightHeaderTitle) flightHeaderTitle.textContent = 'Synthèse des Trajets & Transports';
+          if (flightHeaderIcon) flightHeaderIcon.setAttribute('data-lucide', 'compass');
+          if (flightOutboundLabel) flightOutboundLabel.textContent = 'Trajet Aller';
+          if (flightOutboundIcon) flightOutboundIcon.setAttribute('data-lucide', 'compass');
+          if (flightInboundLabel) flightInboundLabel.textContent = 'Trajet Retour';
+          if (flightInboundIcon) flightInboundIcon.setAttribute('data-lucide', 'compass');
+          if (flightDurationLabel) flightDurationLabel.textContent = 'Durée du trajet';
+          if (flightLayoversLabel) flightLayoversLabel.textContent = 'Itinéraire & Étapes';
+          if (dashDepartIcon) dashDepartIcon.setAttribute('data-lucide', 'map-pin');
+        }
+
+        document.getElementById('flightOutbound').textContent = flights.outbound || (isFlight ? 'Vol direct recommandé' : 'Trajet direct recommandé');
+        document.getElementById('flightInbound').textContent = flights.inbound || (isFlight ? 'Vol retour standard' : 'Trajet retour standard');
+        
+        // Return destination check & badge
+        const lastDayItem = (data.itinerary && data.itinerary.length > 0) ? data.itinerary[data.itinerary.length - 1] : null;
+        const lastStepLocation = flights.lastCity || (lastDayItem ? (lastDayItem.locationName || `Étape du Jour ${lastDayItem.day || data.itinerary.length}`) : null);
+        const inboundBadge = document.getElementById('flightInboundLastStopBadge');
+        const inboundBadgeText = document.getElementById('flightInboundLastStopText');
+        if (inboundBadge && inboundBadgeText) {
+          if (lastStepLocation) {
+            inboundBadge.classList.remove('hidden');
+            inboundBadgeText.textContent = `Départ retour assuré depuis la dernière étape : ${lastStepLocation}`;
+          } else {
+            inboundBadge.classList.add('hidden');
+          }
+        }
+
+        document.getElementById('flightDuration').textContent = flights.totalDuration || 'Variable';
+        document.getElementById('flightLayovers').textContent = flights.layovers || (isFlight ? 'Selon compagnie' : 'Direct');
+
+        // Render Intermediate Connections
+        const intermediateList = document.getElementById('intermediateConnectionsList');
+        const intermediateBadge = document.getElementById('intermediateCountBadge');
+        if (intermediateList) {
+          intermediateList.innerHTML = '';
+          const connections = Array.isArray(flights.intermediateConnections) ? flights.intermediateConnections : [];
+          if (intermediateBadge) {
+            intermediateBadge.textContent = connections.length === 1 ? '1 liaison' : `${connections.length} liaisons`;
+          }
+
+          if (connections.length > 0) {
+            connections.forEach((conn, cIdx) => {
+              const item = document.createElement('div');
+              item.className = 'p-3.5 rounded-xl bg-slate-950 border border-slate-800/80 space-y-2';
+              const fromTo = (conn.from && conn.to) ? `${conn.from} ➔ ${conn.to}` : (conn.segment || `Liaison intérieure ${cIdx + 1}`);
+              item.innerHTML = `
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs font-bold text-white">${escapeHtml(fromTo)}</span>
+                    <span class="text-[10px] uppercase font-semibold px-2 py-0.5 rounded bg-sky-500/10 text-sky-400 border border-sky-500/20">${escapeHtml(conn.type || 'Liaison intérieure')}</span>
+                  </div>
+                  <span class="text-xs font-mono text-slate-400 flex items-center gap-1">
+                    <i data-lucide="clock" class="w-3 h-3 text-sky-400"></i>
+                    ${escapeHtml(conn.duration || 'Variable')}
+                  </span>
+                </div>
+                ${conn.details ? `<p class="text-xs text-slate-300 leading-relaxed">${escapeHtml(conn.details)}</p>` : ''}
+                <div class="flex items-center gap-1.5 text-[11px] text-amber-300/90 pt-1 border-t border-slate-900">
+                  <i data-lucide="sun" class="w-3 h-3 shrink-0"></i>
+                  <span>Créneau : ${escapeHtml(conn.recommendedTime || 'Départ matinal conseillé pour optimiser le temps')}</span>
+                </div>
+              `;
+              intermediateList.appendChild(item);
+            });
+          } else {
+            intermediateList.innerHTML = `
+              <div class="p-3.5 rounded-xl bg-slate-950/60 border border-slate-800/50 text-xs text-slate-400 flex items-center gap-2.5">
+                <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-400 shrink-0"></i>
+                <span>Itinéraire concentré sur un point central : pas de liaison intérieure supplémentaire requise.</span>
+              </div>
+            `;
+          }
+        }
+
+        // Climate & Tips
+        document.getElementById('climateInfo').textContent = data.climateAndBestTime || 'Informations météo non spécifiées.';
+        
+        const tipsList = document.getElementById('localEventsList');
+        tipsList.innerHTML = '';
+        if (data.localEvents && Array.isArray(data.localEvents)) {
+          data.localEvents.forEach(tip => {
+            const li = document.createElement('li');
+            li.className = 'flex items-start gap-2.5 bg-slate-950 p-3 rounded-xl border border-slate-800/80';
+            li.innerHTML = `
+              <i data-lucide="check-circle-2" class="w-4 h-4 text-sky-400 shrink-0 mt-0.5"></i>
+              <span class="text-slate-300 leading-relaxed">${escapeHtml(tip)}</span>
+            `;
+            tipsList.appendChild(li);
+          });
+        }
+
+        // Itinerary Days Cards with Sub-tabs (Tout voir / Matin / Midi / Après-midi / Soir)
+        const itineraryContainer = document.getElementById('itineraryDaysList');
+        itineraryContainer.innerHTML = '';
+
+        data.itinerary.forEach((dayItem, index) => {
+          const card = document.createElement('div');
+          card.className = 'bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 transition hover:border-slate-700/80 shadow-md space-y-4';
+          
+          const coords = dayItem.coordinates || { lat: 0, lng: 0 };
+          const hasCoords = typeof coords.lat === 'number' && typeof coords.lng === 'number' && (coords.lat !== 0 || coords.lng !== 0);
+          const dayNum = dayItem.day || (index + 1);
+          card.id = `itineraryDayCard_${dayNum}`;
+          const isLastDay = (dayNum === data.itinerary.length);
+          const segments = parseDaySegments(dayItem);
+
+          card.innerHTML = `
+            <!-- En-tête de la journée -->
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-4">
+              <div class="flex flex-wrap items-center gap-3">
+                ${isLastDay ? `
+                  <span class="px-3 py-1 rounded-xl bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 shrink-0">
+                    <i data-lucide="home" class="w-3.5 h-3.5 text-indigo-400"></i>
+                    <span>Jour ${dayNum} &bull; Rentrée au domicile</span>
+                  </span>
+                ` : `
+                  <span class="px-3 py-1 rounded-xl bg-sky-500/10 border border-sky-500/20 text-sky-400 text-xs font-bold uppercase tracking-wider shrink-0">
+                    Jour ${dayNum}
+                  </span>
+                `}
+                <h3 class="text-lg font-bold text-white">${escapeHtml(dayItem.title || 'Journée d\'exploration')}</h3>
+              </div>
+              <div class="flex items-center gap-2 text-xs text-slate-400">
+                <i data-lucide="map-pin" class="w-3.5 h-3.5 text-sky-400"></i>
+                <span class="font-medium text-slate-300">${escapeHtml(dayItem.locationName || 'Point d\'intérêt')}</span>
+              </div>
+            </div>
+
+            <!-- Sous-Onglets de la Journée (Découpage Temporel) -->
+            <div class="flex items-center gap-1.5 p-1 bg-slate-950 rounded-xl border border-slate-800/80 overflow-x-auto">
+              <button
+                type="button"
+                onclick="switchDayView(${index}, 'all')"
+                id="dayTab_${index}_all"
+                class="day-tab-btn px-3 py-1.5 rounded-lg text-xs font-bold bg-sky-500 text-white shadow-sm shadow-sky-500/30 transition cursor-pointer whitespace-nowrap"
+              >
+                📋 Tout voir
+              </button>
+              <button
+                type="button"
+                onclick="switchDayView(${index}, 'morning')"
+                id="dayTab_${index}_morning"
+                class="day-tab-btn px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200 transition flex items-center gap-1 cursor-pointer whitespace-nowrap"
+              >
+                <i data-lucide="sun" class="w-3.5 h-3.5 text-amber-400"></i>
+                <span>Matin</span>
+              </button>
+              <button
+                type="button"
+                onclick="switchDayView(${index}, 'lunch')"
+                id="dayTab_${index}_lunch"
+                class="day-tab-btn px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200 transition flex items-center gap-1 cursor-pointer whitespace-nowrap"
+              >
+                <i data-lucide="wallet" class="w-3.5 h-3.5 text-orange-400"></i>
+                <span>Midi / Repas</span>
+              </button>
+              <button
+                type="button"
+                onclick="switchDayView(${index}, 'afternoon')"
+                id="dayTab_${index}_afternoon"
+                class="day-tab-btn px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200 transition flex items-center gap-1 cursor-pointer whitespace-nowrap"
+              >
+                <i data-lucide="compass" class="w-3.5 h-3.5 text-sky-400"></i>
+                <span>Après-midi</span>
+              </button>
+              <button
+                type="button"
+                onclick="switchDayView(${index}, 'evening')"
+                id="dayTab_${index}_evening"
+                class="day-tab-btn px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200 transition flex items-center gap-1 cursor-pointer whitespace-nowrap"
+              >
+                <i data-lucide="clock" class="w-3.5 h-3.5 text-indigo-400"></i>
+                <span>Soirée</span>
+              </button>
+            </div>
+
+            <!-- CONTENU 1 : VUE GLOBALE AVEC GRILLE DÉCOUPÉE -->
+            <div id="dayContent_${index}_all" class="space-y-3">
+              ${dayItem.description ? `<p class="text-slate-300 text-sm leading-relaxed mb-3">${escapeHtml(dayItem.description)}</p>` : ''}
+              
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <!-- Matin -->
+                <div class="p-3.5 rounded-xl bg-slate-950/80 border border-amber-500/20 space-y-1.5">
+                  <div class="flex items-center gap-1.5 text-xs font-bold text-amber-400">
+                    <i data-lucide="sun" class="w-4 h-4"></i>
+                    <span>🌅 Matin</span>
+                  </div>
+                  <p class="text-xs text-slate-300 leading-relaxed">${escapeHtml(segments.morning)}</p>
+                </div>
+
+                <!-- Midi -->
+                <div class="p-3.5 rounded-xl bg-slate-950/80 border border-orange-500/20 space-y-1.5">
+                  <div class="flex items-center gap-1.5 text-xs font-bold text-orange-400">
+                    <i data-lucide="wallet" class="w-4 h-4"></i>
+                    <span>🍽️ Midi & Déjeuner</span>
+                  </div>
+                  <p class="text-xs text-slate-300 leading-relaxed">${escapeHtml(segments.lunch)}</p>
+                </div>
+
+                <!-- Après-midi -->
+                <div class="p-3.5 rounded-xl bg-slate-950/80 border border-sky-500/20 space-y-1.5">
+                  <div class="flex items-center gap-1.5 text-xs font-bold text-sky-400">
+                    <i data-lucide="compass" class="w-4 h-4"></i>
+                    <span>☀️ Après-midi</span>
+                  </div>
+                  <p class="text-xs text-slate-300 leading-relaxed">${escapeHtml(segments.afternoon)}</p>
+                </div>
+
+                <!-- Soir -->
+                <div class="p-3.5 rounded-xl bg-slate-950/80 border border-indigo-500/20 space-y-1.5">
+                  <div class="flex items-center gap-1.5 text-xs font-bold text-indigo-400">
+                    <i data-lucide="clock" class="w-4 h-4"></i>
+                    <span>🌙 Soirée & Dîner</span>
+                  </div>
+                  <p class="text-xs text-slate-300 leading-relaxed">${escapeHtml(segments.evening)}</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- CONTENU 2 : FOCUS MATIN -->
+            <div id="dayContent_${index}_morning" class="hidden p-4 rounded-xl bg-slate-950 border border-amber-500/30 space-y-2">
+              <div class="flex items-center justify-between text-xs font-bold text-amber-400">
+                <span class="flex items-center gap-1.5">
+                  <i data-lucide="sun" class="w-4 h-4"></i>
+                  Déroulé du Matin (08h00 - 12h00)
+                </span>
+                <span class="text-[11px] px-2 py-0.5 rounded bg-amber-500/10 text-amber-300">Éveil & Premières visites</span>
+              </div>
+              <p class="text-sm text-slate-200 leading-relaxed">${escapeHtml(segments.morning)}</p>
+            </div>
+
+            <!-- CONTENU 3 : FOCUS MIDI / DÉJEUNER -->
+            <div id="dayContent_${index}_lunch" class="hidden p-4 rounded-xl bg-slate-950 border border-orange-500/30 space-y-2">
+              <div class="flex items-center justify-between text-xs font-bold text-orange-400">
+                <span class="flex items-center gap-1.5">
+                  <i data-lucide="wallet" class="w-4 h-4"></i>
+                  Pause Déjeuner & Spécialités Culinaires (12h00 - 14h00)
+                </span>
+                <span class="text-[11px] px-2 py-0.5 rounded bg-orange-500/10 text-orange-300">Saveurs & Gastronomie</span>
+              </div>
+              <p class="text-sm text-slate-200 leading-relaxed">${escapeHtml(segments.lunch)}</p>
+            </div>
+
+            <!-- CONTENU 4 : FOCUS APRÈS-MIDI -->
+            <div id="dayContent_${index}_afternoon" class="hidden p-4 rounded-xl bg-slate-950 border border-sky-500/30 space-y-2">
+              <div class="flex items-center justify-between text-xs font-bold text-sky-400">
+                <span class="flex items-center gap-1.5">
+                  <i data-lucide="compass" class="w-4 h-4"></i>
+                  Programme de l'Après-midi (14h00 - 18h30)
+                </span>
+                <span class="text-[11px] px-2 py-0.5 rounded bg-sky-500/10 text-sky-300">Monuments & Découvertes</span>
+              </div>
+              <p class="text-sm text-slate-200 leading-relaxed">${escapeHtml(segments.afternoon)}</p>
+            </div>
+
+            <!-- CONTENU 5 : FOCUS SOIRÉE -->
+            <div id="dayContent_${index}_evening" class="hidden p-4 rounded-xl bg-slate-950 border border-indigo-500/30 space-y-2">
+              <div class="flex items-center justify-between text-xs font-bold text-indigo-400">
+                <span class="flex items-center gap-1.5">
+                  <i data-lucide="clock" class="w-4 h-4"></i>
+                  Soirée, Dîner & Nuitée (19h00 - Nuit)
+                </span>
+                <span class="text-[11px] px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-300">Ambiance & Dîner</span>
+              </div>
+              <p class="text-sm text-slate-200 leading-relaxed">${escapeHtml(segments.evening)}</p>
+            </div>
+
+            ${hasCoords ? `
+              <div class="flex items-center justify-between pt-2 border-t border-slate-800/60 text-xs">
+                <span class="text-slate-500 font-mono">GPS: ${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}</span>
+                <button
+                  type="button"
+                  onclick="zoomToDayOnMap(${dayNum}, ${coords.lat}, ${coords.lng}, '${escapeAttr(dayItem.locationName || '')}')"
+                  class="text-sky-400 hover:text-sky-300 flex items-center gap-1.5 font-medium transition cursor-pointer"
+                >
+                  <i data-lucide="map-pin" class="w-3.5 h-3.5"></i>
+                  Localiser sur la carte
+                </button>
+              </div>
+            ` : ''}
+          `;
+          itineraryContainer.appendChild(card);
+        });
+
+        // Sync Save Button State
+        updateSaveTripBtnState();
+
+        // Initialize Map
+        setupMap(data.itinerary);
+
+        // Render Quick Jump Pills under Map
+        const mapPillsContainer = document.getElementById('mapStopsPills');
+        mapPillsContainer.innerHTML = '';
+        data.itinerary.forEach((dayItem, index) => {
+          const coords = dayItem.coordinates;
+          if (coords && typeof coords.lat === 'number') {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'px-3 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-xs text-slate-300 hover:text-white flex items-center gap-1.5 transition cursor-pointer';
+            btn.innerHTML = `<span class="text-sky-400 font-bold">J${dayItem.day || index + 1}</span> <span>${escapeHtml(dayItem.locationName || 'Étape')}</span>`;
+            btn.onclick = () => {
+              if (mapInstance) {
+                mapInstance.flyTo({ center: [coords.lng, coords.lat], zoom: 12, speed: 1.2 });
+              }
+            };
+            mapPillsContainer.appendChild(btn);
+          }
+        });
+
+        // Default tab is Itinerary
+        switchTab('itinerary');
+        lucide.createIcons();
+      }
+
+      // ==========================================
+      // GESTION DU DÉCOUPAGE TEMPOREL D'UNE JOURNÉE
+      // ==========================================
+      function parseDaySegments(dayItem) {
+        let morning = dayItem.morning || '';
+        let lunch = dayItem.lunch || '';
+        let afternoon = dayItem.afternoon || '';
+        let evening = dayItem.evening || '';
+
+        const desc = dayItem.description || '';
+        if (!morning || !lunch || !evening) {
+          const morningMatch = desc.match(/(?:matin|matinée)[^:]*:\s*([^.\n]+(?:\.[^.\n]+)?)/i);
+          const lunchMatch = desc.match(/(?:midi|déjeuner|pause gourmande)[^:]*:\s*([^.\n]+(?:\.[^.\n]+)?)/i);
+          const afterMatch = desc.match(/(?:après-midi|visite)[^:]*:\s*([^.\n]+(?:\.[^.\n]+)?)/i);
+          const eveningMatch = desc.match(/(?:soir|soirée|dîner)[^:]*:\s*([^.\n]+(?:\.[^.\n]+)?)/i);
+
+          if (morningMatch && !morning) morning = morningMatch[1].trim();
+          if (lunchMatch && !lunch) lunch = lunchMatch[1].trim();
+          if (afterMatch && !afternoon) afternoon = afterMatch[1].trim();
+          if (eveningMatch && !evening) evening = eveningMatch[1].trim();
+
+          const sentences = desc.split(/(?<=[.!?])\s+/).filter(s => s.trim().length > 0);
+          if (!morning && sentences[0]) morning = sentences[0];
+          if (!afternoon && sentences[1]) afternoon = sentences[1];
+          if (!evening && sentences[2]) evening = sentences[2];
+          if (!lunch) lunch = `Pause déjeuner et découverte des spécialités gastronomiques locales de ${dayItem.locationName || "l'étape"}.`;
+          if (!morning) morning = `Départ matinal et premières visites emblématiques des alentours.`;
+          if (!afternoon) afternoon = `Visites culturelles, monuments et balades de l'après-midi.`;
+          if (!evening) evening = `Dîner dans une bonne adresse locale et détente en soirée.`;
+        }
+
+        return { morning, lunch, afternoon, evening };
+      }
+
+      function switchDayView(dayIndex, viewType) {
+        const views = ['all', 'morning', 'lunch', 'afternoon', 'evening'];
+        views.forEach(v => {
+          const content = document.getElementById(`dayContent_${dayIndex}_${v}`);
+          const btn = document.getElementById(`dayTab_${dayIndex}_${v}`);
+          if (content) {
+            if (v === viewType) {
+              content.classList.remove('hidden');
+            } else {
+              content.classList.add('hidden');
+            }
+          }
+          if (btn) {
+            if (v === viewType) {
+              btn.className = 'day-tab-btn px-3 py-1.5 rounded-lg text-xs font-bold bg-sky-500 text-white shadow-sm shadow-sky-500/30 transition cursor-pointer whitespace-nowrap';
+            } else {
+              btn.className = 'day-tab-btn px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200 transition flex items-center gap-1 cursor-pointer whitespace-nowrap';
+            }
+          }
+        });
+        lucide.createIcons();
+      }
+
+      // ==========================================
+      // ADAPTATION APRÈS COUP (REFINE TRIP)
+      // ==========================================
+      function setRefineText(text) {
+        const input = document.getElementById('refineInput');
+        if (input) {
+          input.value = text;
+          input.focus();
+        }
+      }
+
+      async function handleRefineSubmit(e) {
+        if (e) e.preventDefault();
+        const input = document.getElementById('refineInput');
+        const instruction = (input?.value || '').trim();
+        if (!instruction) return;
+        if (!currentTripData) {
+          showToast("Aucun itinéraire en cours à modifier.", true);
+          return;
+        }
+
+        const banner = document.getElementById('refineLoadingBanner');
+        const submitBtn = document.getElementById('refineSubmitBtn');
+        if (banner) banner.classList.remove('hidden');
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        }
+
+        try {
+          let updatedTrip = null;
+
+          // Priority 1: Use server refine endpoint
+          if (serverHasKey) {
+            const res = await fetch('/api/refine-trip', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                currentTrip: currentTripData,
+                instruction: instruction
+              })
+            });
+
+            if (res.ok) {
+              updatedTrip = await res.json();
+            } else {
+              let msg = '';
+              try {
+                const err = await res.json();
+                msg = err.error?.message;
+              } catch (_) {}
+              throw new Error(msg || "Erreur du serveur lors de l'adaptation.");
+            }
+          } else {
+            // Priority 2: Client-side Gemini fallback
+            const apiKey = localStorage.getItem(STORAGE_KEY);
+            if (!apiKey) {
+              throw new Error("Clé API requise pour adapter l'itinéraire.");
+            }
+
+            const promptText = `Tu es un expert planificateur de voyage.
+Voici l'itinéraire actuel au format JSON :
+${JSON.stringify(currentTripData, null, 2)}
+
+Demande d'adaptation ciblée formulée par l'utilisateur :
+"${instruction}"
+
+Règles impératives :
+1. NE MODIFIE QUE LES PARTIES CIBLÉES par la demande (monument, étape, restaurant, activité du matin/midi/soir, étape de transport).
+2. Conserve rigoureusement intactes toutes les autres données et journées.
+3. Si un lieu ou monument change, actualise ses coordonnées GPS précises (latitude/longitude).
+4. Respecte la règle terminologique : n'utilise "vol" que pour l'avion, sinon utilise "trajet".
+5. Préconise les départs le matin et retours le soir.
+6. Renvoie UNIQUEMENT le JSON complet mis à jour.`;
+
+            const candidateModels = ['gemini-3.8-flash', 'gemini-3.1-flash-lite'];
+            let lastRefineErr = null;
+
+            for (const model of candidateModels) {
+              try {
+                const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+                const response = await fetch(endpoint, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    contents: [{ role: 'user', parts: [{ text: promptText }] }],
+                    generationConfig: { response_mime_type: 'application/json', max_output_tokens: 8192 }
+                  })
+                });
+
+                if (!response.ok) {
+                  let errDetail = `Code ${response.status}`;
+                  try {
+                    const errB = await response.json();
+                    if (errB.error?.message) errDetail = errB.error.message;
+                  } catch (_) {}
+                  throw new Error(`Erreur API (${model}): ${errDetail}`);
+                }
+
+                const resData = await response.json();
+                const rawText = resData.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (!rawText) throw new Error("Contenu vide reçu de l'API");
+                updatedTrip = parseRobustJson(rawText);
+                if (updatedTrip && updatedTrip.itinerary && Array.isArray(updatedTrip.itinerary)) {
+                  break;
+                }
+              } catch (err) {
+                console.warn(`Refine model ${model} failed, trying fallback:`, err);
+                lastRefineErr = err;
+              }
+            }
+
+            if (!updatedTrip) {
+              throw lastRefineErr || new Error("Impossible d'adapter l'itinéraire. Veuillez réessayer.");
+            }
+          }
+
+          if (updatedTrip && updatedTrip.itinerary && Array.isArray(updatedTrip.itinerary)) {
+            currentTripData = updatedTrip;
+            renderDashboard(updatedTrip);
+            if (input) input.value = '';
+
+            // If the trip was already saved, auto-update the saved copy too
+            if (isTripSaved(updatedTrip)) {
+              saveTripToStorage(updatedTrip);
+            }
+            showToast("Itinéraire adapté avec succès avec vos souhaits !");
+          } else {
+            throw new Error("Format de réponse inattendu lors de l'adaptation.");
+          }
+        } catch (err) {
+          console.error("Refine error:", err);
+          showToast(err.message || "Impossible d'adapter l'itinéraire.", true);
+        } finally {
+          if (banner) banner.classList.add('hidden');
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+          }
+          lucide.createIcons();
+        }
+      }
+
+      // ==========================================
+      // SAUVEGARDE ET GESTION DES VOYAGES
+      // ==========================================
+      const SAVED_TRIPS_KEY = 'optitrip_saved_trips';
+
+      function getSavedTrips() {
+        try {
+          const raw = localStorage.getItem(SAVED_TRIPS_KEY);
+          return raw ? JSON.parse(raw) : [];
+        } catch (_) {
+          return [];
+        }
+      }
+
+      function isTripSaved(trip) {
+        if (!trip) return false;
+        const trips = getSavedTrips();
+        const tripKey = trip.id || `${trip.title}_${trip.departureCity}`;
+        return trips.some(t => (t.id || `${t.title}_${t.departureCity}`) === tripKey);
+      }
+
+      function saveTripToStorage(trip) {
+        if (!trip) return;
+        const trips = getSavedTrips();
+        const tripId = trip.id || `trip_${Date.now()}`;
+        trip.id = tripId;
+        trip.savedAt = trip.savedAt || new Date().toISOString();
+
+        const existingIdx = trips.findIndex(t => (t.id === tripId) || (`${t.title}_${t.departureCity}` === `${trip.title}_${trip.departureCity}`));
+        if (existingIdx >= 0) {
+          trips[existingIdx] = trip;
+        } else {
+          trips.unshift(trip);
+        }
+        localStorage.setItem(SAVED_TRIPS_KEY, JSON.stringify(trips));
+        updateSavedTripsCount();
+        updateSaveTripBtnState();
+      }
+
+      function removeTripFromStorage(tripId) {
+        const trips = getSavedTrips().filter(t => t.id !== tripId);
+        localStorage.setItem(SAVED_TRIPS_KEY, JSON.stringify(trips));
+        updateSavedTripsCount();
+        updateSaveTripBtnState();
+        renderSavedTripsList();
+      }
+
+      function updateSavedTripsCount() {
+        const count = getSavedTrips().length;
+        const badge = document.getElementById('savedTripsCount');
+        if (badge) badge.textContent = count;
+      }
+
+      function updateSaveTripBtnState() {
+        const btn = document.getElementById('saveTripBtn');
+        const icon = document.getElementById('saveTripBtnIcon');
+        const label = document.getElementById('saveTripBtnLabel');
+        if (!btn || !label) return;
+
+        const saved = isTripSaved(currentTripData);
+        if (saved) {
+          btn.className = 'px-4 py-2 text-xs font-semibold rounded-xl bg-amber-500 text-white border border-amber-400 transition flex items-center gap-2 shadow-sm cursor-pointer';
+          if (icon) {
+            icon.setAttribute('data-lucide', 'bookmark');
+            icon.className = 'w-4 h-4 text-white fill-white';
+          }
+          label.textContent = 'Voyage sauvegardé ✓';
+        } else {
+          btn.className = 'px-4 py-2 text-xs font-semibold rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 transition flex items-center gap-2 shadow-sm cursor-pointer';
+          if (icon) {
+            icon.setAttribute('data-lucide', 'bookmark');
+            icon.className = 'w-4 h-4 text-amber-400';
+          }
+          label.textContent = 'Sauvegarder ce voyage';
+        }
+        lucide.createIcons();
+      }
+
+      function toggleSaveCurrentTrip() {
+        if (!currentTripData) return;
+        if (isTripSaved(currentTripData)) {
+          const tripId = currentTripData.id || getSavedTrips().find(t => `${t.title}_${t.departureCity}` === `${currentTripData.title}_${currentTripData.departureCity}`)?.id;
+          if (tripId) {
+            removeTripFromStorage(tripId);
+            showToast("Voyage retiré de vos favoris.");
+          }
+        } else {
+          saveTripToStorage(currentTripData);
+          showToast("Voyage sauvegardé avec succès dans votre navigateur !");
+        }
+      }
+
+      function toggleSavedTripsModal(show) {
+        const modal = document.getElementById('savedTripsModal');
+        if (!modal) return;
+        if (show) {
+          renderSavedTripsList();
+          modal.classList.remove('hidden');
+          modal.classList.add('flex');
+        } else {
+          modal.classList.add('hidden');
+          modal.classList.remove('flex');
+        }
+        lucide.createIcons();
+      }
+
+      function renderSavedTripsList() {
+        const list = document.getElementById('savedTripsList');
+        const footer = document.getElementById('savedTripsModalFooterText');
+        const trips = getSavedTrips();
+
+        if (footer) {
+          footer.textContent = `${trips.length} voyage(s) sauvegardé(s)`;
+        }
+
+        if (!list) return;
+        list.innerHTML = '';
+
+        if (trips.length === 0) {
+          list.innerHTML = `
+            <div class="text-center py-10 space-y-3">
+              <div class="w-12 h-12 rounded-full bg-slate-800 text-slate-500 mx-auto flex items-center justify-center">
+                <i data-lucide="bookmark" class="w-6 h-6"></i>
+              </div>
+              <p class="text-sm font-semibold text-slate-300">Aucun voyage enregistré pour le moment</p>
+              <p class="text-xs text-slate-500 max-w-xs mx-auto">
+                Générez un itinéraire et cliquez sur "Sauvegarder ce voyage" pour le retrouver ici à tout moment.
+              </p>
+            </div>
+          `;
+          lucide.createIcons();
+          return;
+        }
+
+        trips.forEach((trip) => {
+          const card = document.createElement('div');
+          card.className = 'p-4 rounded-xl bg-slate-950 border border-slate-800 hover:border-slate-700 transition flex flex-col sm:flex-row sm:items-center justify-between gap-3';
+          
+          const destinationsText = Array.isArray(trip.destinations) ? trip.destinations.join(', ') : (trip.destinations || 'Destination');
+          const savedDate = trip.savedAt ? new Date(trip.savedAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Récemment';
+
+          card.innerHTML = `
+            <div class="space-y-1">
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-bold text-white">${escapeHtml(trip.title || 'Voyage')}</span>
+                <span class="text-[10px] px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 font-semibold border border-sky-500/20">${trip.durationDays || (trip.itinerary ? trip.itinerary.length : 3)} jours</span>
+              </div>
+              <div class="flex flex-wrap items-center gap-3 text-xs text-slate-400">
+                <span class="flex items-center gap-1">
+                  <i data-lucide="map-pin" class="w-3 h-3 text-sky-400"></i>
+                  ${escapeHtml(destinationsText)}
+                </span>
+                <span class="flex items-center gap-1">
+                  <i data-lucide="compass" class="w-3 h-3 text-slate-500"></i>
+                  Depuis ${escapeHtml(trip.departureCity || 'France')}
+                </span>
+                <span class="text-slate-500 text-[11px]">Enregistré le ${savedDate}</span>
+              </div>
+            </div>
+            <div class="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+              <button
+                type="button"
+                onclick="loadSavedTrip('${trip.id}')"
+                class="px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-white text-xs font-semibold transition flex items-center gap-1 cursor-pointer"
+              >
+                <i data-lucide="arrow-left" class="w-3.5 h-3.5 rotate-180"></i>
+                <span>Ouvrir</span>
+              </button>
+              <button
+                type="button"
+                onclick="removeTripFromStorage('${trip.id}')"
+                class="p-1.5 rounded-lg bg-slate-900 hover:bg-red-950/60 text-slate-400 hover:text-red-400 border border-slate-800 hover:border-red-800/60 transition cursor-pointer"
+                title="Supprimer"
+              >
+                <i data-lucide="alert-circle" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+          `;
+          list.appendChild(card);
+        });
+        lucide.createIcons();
+      }
+
+      function loadSavedTrip(tripId) {
+        const trip = getSavedTrips().find(t => t.id === tripId);
+        if (!trip) return;
+        currentTripData = trip;
+        renderDashboard(trip);
+        showScreen('dashboard');
+        toggleSavedTripsModal(false);
+        showToast(`Itinéraire "${trip.title || 'Voyage'}" chargé avec succès !`);
+      }
+
+      function exportAllSavedTrips() {
+        const trips = getSavedTrips();
+        if (trips.length === 0) {
+          showToast("Aucun voyage à exporter.", true);
+          return;
+        }
+        const blob = new Blob([JSON.stringify(trips, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `optitrip-voyages-sauvegardes-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }
+
+      // ==========================================
+      // FUSEAU HORAIRE CONCRÉTISÉ
+      // ==========================================
+      function formatConcreteTimezone(tzRaw, fromCity, toCity) {
+        const from = fromCity || 'votre départ';
+        const to = toCity || 'votre destination';
+        if (!tzRaw) return `0h (même heure à ${from} et ${to})`;
+
+        const raw = String(tzRaw).trim();
+        // Déjà concrétisé par le LLM (ex: "+6h, à 12h à Toulouse il sera 18h à...")
+        if (/à\s*12h|lorsqu'il\s*est|même\s*fuseau|il\s*est\s*\d+h|il\s*sera\s*\d+h/i.test(raw)) {
+          return raw;
+        }
+
+        // Extraction du décalage numérique (+6, -5, +6h, etc.)
+        const match = raw.match(/([+-]?\d+(?:[.,]\d+)?)/);
+        if (match) {
+          const diffHours = parseFloat(match[1].replace(',', '.'));
+          const sign = diffHours > 0 ? `+${diffHours}h` : (diffHours < 0 ? `${diffHours}h` : '0h');
+          if (diffHours === 0) {
+            return `0h (même heure à ${from} et ${to})`;
+          }
+          let destHour = 12 + diffHours;
+          if (destHour < 0) destHour += 24;
+          if (destHour >= 24) destHour -= 24;
+          const destHourStr = `${String(Math.floor(destHour)).padStart(2, '0')}h00`;
+          return `${sign} (à 12h00 à ${from}, il est ${destHourStr} à ${to})`;
+        }
+
+        return raw;
+      }
+
+      // ==========================================
+      // GESTION DU DÉTAIL DU BUDGET (MODAL)
+      // ==========================================
+      function getBudgetBreakdown(tripData) {
+        if (!tripData) return null;
+        const rawBreakdown = tripData.budgetBreakdown;
+        const estimateStr = tripData.budgetEstimate || '1500€';
+        const days = tripData.durationDays || (tripData.itinerary ? tripData.itinerary.length : 7);
+        const departure = tripData.departureCity || 'votre ville de départ';
+        const destinations = Array.isArray(tripData.destinations) ? tripData.destinations.join(', ') : (tripData.destinations || 'destination');
+
+        let totalNum = 1500;
+        const numMatch = estimateStr.match(/(\d+[\s\d]*)/);
+        if (numMatch) {
+          totalNum = parseInt(numMatch[1].replace(/\s/g, ''), 10) || 1500;
+        }
+
+        if (rawBreakdown && typeof rawBreakdown === 'object') {
+          return {
+            totalPerPerson: rawBreakdown.totalPerPerson || estimateStr,
+            flights: typeof rawBreakdown.flights === 'object' ? `${rawBreakdown.flights.amount || ''} - ${rawBreakdown.flights.details || ''}` : (rawBreakdown.flights || `~${Math.round(totalNum * 0.4)}€ (Vols / liaisons aller-retour)`),
+            accommodation: typeof rawBreakdown.accommodation === 'object' ? `${rawBreakdown.accommodation.amount || ''} - ${rawBreakdown.accommodation.details || ''}` : (rawBreakdown.accommodation || `~${Math.round(totalNum * 0.3)}€ (${days} nuits, soit ~${Math.round((totalNum * 0.3) / Math.max(days - 1, 1))}€/nuit)`),
+            food: typeof rawBreakdown.food === 'object' ? `${rawBreakdown.food.amount || ''} - ${rawBreakdown.food.details || ''}` : (rawBreakdown.food || `~${Math.round(totalNum * 0.18)}€ (Repas et pauses déjeuners, soit ~${Math.round((totalNum * 0.18) / days)}€/jour)`),
+            activities: typeof rawBreakdown.activities === 'object' ? `${rawBreakdown.activities.amount || ''} - ${rawBreakdown.activities.details || ''}` : (rawBreakdown.activities || `~${Math.round(totalNum * 0.07)}€ (Monuments, visites, musées et activités)`),
+            localTransport: typeof rawBreakdown.localTransport === 'object' ? `${rawBreakdown.localTransport.amount || ''} - ${rawBreakdown.localTransport.details || ''}` : (rawBreakdown.localTransport || `~${Math.round(totalNum * 0.05)}€ (Transports locaux, métros et transferts)`),
+            tipsAndAdvice: rawBreakdown.tipsAndAdvice || "Réservez vos vols et hébergements plusieurs mois à l'avance pour bénéficier des meilleurs tarifs."
+          };
+        }
+
+        const flightAmount = Math.round(totalNum * 0.4);
+        const hotelAmount = Math.round(totalNum * 0.3);
+        const foodAmount = Math.round(totalNum * 0.18);
+        const activitiesAmount = Math.round(totalNum * 0.07);
+        const localTransportAmount = Math.max(totalNum - flightAmount - hotelAmount - foodAmount - activitiesAmount, Math.round(totalNum * 0.05));
+
+        return {
+          totalPerPerson: `${totalNum}€ / pers`,
+          flights: `~${flightAmount}€ (Vols & liaisons aller-retour au départ de ${departure})`,
+          accommodation: `~${hotelAmount}€ (${days} nuits, soit environ ${Math.round(hotelAmount / Math.max(days - 1, 1))}€ / nuit)`,
+          food: `~${foodAmount}€ (Restauration sur place, soit ~${Math.round(foodAmount / days)}€ / jour)`,
+          activities: `~${activitiesAmount}€ (Visites, entrées monuments, musées et expériences à ${destinations})`,
+          localTransport: `~${localTransportAmount}€ (Métro, bus, pass régionaux et liaisons sur place)`,
+          tipsAndAdvice: "Pensez à réserver les billets d'avion et hébergements plusieurs mois à l'avance pour bénéficier des meilleurs tarifs."
+        };
+      }
+
+      function openBudgetModal() {
+        if (!currentTripData) {
+          showToast("Aucun itinéraire chargé pour afficher le budget.", true);
+          return;
+        }
+
+        const breakdown = getBudgetBreakdown(currentTripData);
+        const days = currentTripData.durationDays || (currentTripData.itinerary ? currentTripData.itinerary.length : 7);
+        const destinationsStr = Array.isArray(currentTripData.destinations) ? currentTripData.destinations.join(', ') : (currentTripData.destinations || 'Destination');
+
+        document.getElementById('budgetModalSubtitle').textContent = `Ventilation prévisionnelle par personne pour ${destinationsStr} (${days} jours)`;
+        document.getElementById('budgetModalTotalAmount').textContent = breakdown.totalPerPerson;
+
+        let totalNum = 1500;
+        const numMatch = String(breakdown.totalPerPerson).match(/(\d+[\s\d]*)/);
+        if (numMatch) totalNum = parseInt(numMatch[1].replace(/\s/g, ''), 10) || 1500;
+        const dailyAvg = Math.round(totalNum / Math.max(days, 1));
+        document.getElementById('budgetModalDailyAvg').textContent = `~${dailyAvg}€ / jour / pers`;
+
+        // Transports / Vols
+        document.getElementById('budgetPostFlightsAmount').textContent = extractLeadingPrice(breakdown.flights) || '~40%';
+        document.getElementById('budgetPostFlightsDesc').textContent = breakdown.flights;
+
+        // Hébergements
+        document.getElementById('budgetPostHotelAmount').textContent = extractLeadingPrice(breakdown.accommodation) || '~30%';
+        document.getElementById('budgetPostHotelDesc').textContent = breakdown.accommodation;
+
+        // Restauration
+        document.getElementById('budgetPostFoodAmount').textContent = extractLeadingPrice(breakdown.food) || '~18%';
+        document.getElementById('budgetPostFoodDesc').textContent = breakdown.food;
+
+        // Activités
+        document.getElementById('budgetPostActivitiesAmount').textContent = extractLeadingPrice(breakdown.activities) || '~7%';
+        document.getElementById('budgetPostActivitiesDesc').textContent = breakdown.activities;
+
+        // Transports Locaux
+        document.getElementById('budgetPostTransportsAmount').textContent = extractLeadingPrice(breakdown.localTransport) || '~5%';
+        document.getElementById('budgetPostTransportsDesc').textContent = breakdown.localTransport;
+
+        // Astuce
+        document.getElementById('budgetModalTipsText').textContent = breakdown.tipsAndAdvice;
+
+        const modal = document.getElementById('budgetDetailModal');
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        lucide.createIcons();
+      }
+
+      function closeBudgetModal() {
+        const modal = document.getElementById('budgetDetailModal');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+      }
+
+      function extractLeadingPrice(str) {
+        if (!str) return '';
+        const match = String(str).match(/^([~]?\s*\d+[\s\d]*\s*€(?:\s*-\s*[~]?\s*\d+[\s\d]*\s*€)?)/);
+        return match ? match[1].trim() : '';
+      }
+
+      // ==========================================
+      // EXPORT EN EXCEL (.XLSX)
+      // ==========================================
+      function handleExportCurrentTripToExcel() {
+        if (!currentTripData) {
+          showToast("Veuillez d'abord générer un itinéraire pour pouvoir l'exporter en Excel.", true);
+          return;
+        }
+        exportTripToExcel(currentTripData);
+      }
+
+      function exportTripToExcel(tripData) {
+        if (!tripData) return;
+
+        if (typeof XLSX === 'undefined') {
+          console.warn("SheetJS (xlsx) non chargé, basculement sur l'export CSV structuré.");
+          exportTripToCsv(tripData);
+          return;
+        }
+
+        try {
+          const wb = XLSX.utils.book_new();
+          const destinationsStr = Array.isArray(tripData.destinations) ? tripData.destinations.join(', ') : (tripData.destinations || '');
+          const duration = tripData.durationDays || (tripData.itinerary ? tripData.itinerary.length : 7);
+          const flights = tripData.flightDetails || {};
+          const concreteTz = formatConcreteTimezone(tripData.timeZoneDifference, tripData.departureCity, destinationsStr);
+          const budget = getBudgetBreakdown(tripData);
+
+          // ------------------------------------------
+          // 1. Feuille : Synthèse du Voyage
+          // ------------------------------------------
+          const overviewData = [
+            ["PROJET DE VOYAGE - SYNTHÈSE GLOBALE", ""],
+            ["", ""],
+            ["Titre du voyage", tripData.title || "Mon voyage"],
+            ["Ville de départ", tripData.departureCity || ""],
+            ["Destinations", destinationsStr],
+            ["Durée du séjour", `${duration} jours (Dernier jour = Jour où l'on doit être rentrés au domicile)`],
+            ["Période / Dates", tripData.datesText || ""],
+            ["Style de voyage", tripData.style || ""],
+            ["Budget estimé par personne", tripData.budgetEstimate || ""],
+            ["Décalage horaire", concreteTz],
+            ["Climat & Meilleure période", tripData.climateAndBestTime || ""],
+            ["", ""],
+            ["LOGISTIQUE DES TRANSPORTS & VOLS", ""],
+            ["Type de transport", flights.transportType || "Avion"],
+            ["Trajet / Vol Aller", flights.outbound || "Départ matin préconisé"],
+            ["Trajet / Vol Retour", flights.inbound || "Retour soir préconisé (rentrée chez soi)"],
+            ["Dernière étape visitée", flights.lastCity || "Dernière étape"],
+            ["Règle vols long-courrier", "Mêmes aéroports de départ et d'arrivée pour les vols long-courrier internationaux."],
+            ["Durée totale du vol/trajet", flights.totalDuration || ""],
+            ["Escales / Correspondances", flights.layovers || ""],
+            ["Recommandations horaires", flights.scheduleTip || "Départ le matin et retour le soir préconisés"],
+            ["", ""],
+            ["CONSEILS & BONNES PRATIQUES LOCALES", ""]
+          ];
+
+          if (Array.isArray(tripData.localEvents)) {
+            tripData.localEvents.forEach((tip, idx) => {
+              overviewData.push([`Conseil ${idx + 1}`, tip]);
+            });
+          }
+
+          const multiBreakdown = computeDestinationBreakdown(tripData);
+          if (multiBreakdown && multiBreakdown.length >= 2) {
+            overviewData.push(["", ""]);
+            overviewData.push(["RÉPARTITION DU TEMPS PAR DESTINATION (MULTIDESTINATION)", ""]);
+            multiBreakdown.forEach((item, idx) => {
+              overviewData.push([
+                `Étape ${idx + 1} : ${item.name}`,
+                `${item.daysCount} jour(s) (${item.percentage}%) • Période : ${item.dayRange} • Points clés : ${item.highlights || 'Non spécifié'}`
+              ]);
+            });
+          }
+
+          const wsOverview = XLSX.utils.aoa_to_sheet(overviewData);
+          wsOverview['!cols'] = [{ wch: 30 }, { wch: 80 }];
+          XLSX.utils.book_append_sheet(wb, wsOverview, "Synthèse");
+
+          // ------------------------------------------
+          // 2. Feuille : Itinéraire Quotidien Détaillé
+          // ------------------------------------------
+          const itineraryHeaders = [
+            "Jour",
+            "Statut de l'étape",
+            "Titre de la journée",
+            "Lieu / Monument principal",
+            "Matin (08h00 - 12h00)",
+            "Midi & Déjeuner",
+            "Après-midi (14h00 - 18h00)",
+            "Soirée & Dîner",
+            "Coordonnées GPS (Lat)",
+            "Coordonnées GPS (Lng)"
+          ];
+
+          const itineraryRows = [itineraryHeaders];
+          const totalDays = tripData.itinerary ? tripData.itinerary.length : 0;
+
+          if (Array.isArray(tripData.itinerary)) {
+            tripData.itinerary.forEach((dayItem, idx) => {
+              const dayNum = dayItem.day || (idx + 1);
+              const isLastDay = dayNum === totalDays;
+              const status = isLastDay ? "Retour / Rentrée au domicile" : (dayNum === 1 ? "Départ & Arrivée" : "Exploration");
+              const segments = parseDaySegments(dayItem);
+              const coords = dayItem.coordinates || {};
+
+              itineraryRows.push([
+                `Jour ${dayNum}`,
+                status,
+                dayItem.title || "",
+                dayItem.locationName || "",
+                segments.morning || "",
+                segments.lunch || "",
+                segments.afternoon || "",
+                segments.evening || "",
+                coords.lat ? coords.lat.toFixed(5) : "",
+                coords.lng ? coords.lng.toFixed(5) : ""
+              ]);
+            });
+          }
+
+          const wsItinerary = XLSX.utils.aoa_to_sheet(itineraryRows);
+          wsItinerary['!cols'] = [
+            { wch: 10 },
+            { wch: 28 },
+            { wch: 32 },
+            { wch: 28 },
+            { wch: 45 },
+            { wch: 35 },
+            { wch: 45 },
+            { wch: 40 },
+            { wch: 15 },
+            { wch: 15 }
+          ];
+          XLSX.utils.book_append_sheet(wb, wsItinerary, "Itinéraire Quotidien");
+
+          // ------------------------------------------
+          // 3. Feuille : Transports & Liaisons
+          // ------------------------------------------
+          const transportRows = [
+            ["Type de liaison", "Segment", "Départ", "Arrivée", "Détails & Horaires recommandés", "Durée estimée"],
+            [
+              flights.transportType || "Trajet principal",
+              "ALLER",
+              tripData.departureCity || "Origine",
+              destinationsStr,
+              flights.outbound || "Départ matinal préconisé",
+              flights.totalDuration || ""
+            ],
+            [
+              flights.transportType || "Trajet principal",
+              "RETOUR (Rentrée domicile)",
+              flights.lastCity || "Dernière étape",
+              tripData.departureCity || "Origine",
+              flights.inbound || "Retour en soirée préconisé (mêmes aéroports pour vols long-courrier)",
+              flights.totalDuration || ""
+            ]
+          ];
+
+          if (Array.isArray(flights.intermediateConnections)) {
+            flights.intermediateConnections.forEach((conn, cIdx) => {
+              transportRows.push([
+                conn.type || "Liaison intérieure",
+                conn.segment || `Étape intérieure ${cIdx + 1}`,
+                conn.from || "",
+                conn.to || "",
+                `${conn.details || ''} ${conn.recommendedTime ? '(' + conn.recommendedTime + ')' : ''}`.trim(),
+                conn.duration || ""
+              ]);
+            });
+          }
+
+          const wsTransports = XLSX.utils.aoa_to_sheet(transportRows);
+          wsTransports['!cols'] = [{ wch: 22 }, { wch: 24 }, { wch: 20 }, { wch: 20 }, { wch: 60 }, { wch: 18 }];
+          XLSX.utils.book_append_sheet(wb, wsTransports, "Transports & Liaisons");
+
+          // ------------------------------------------
+          // 4. Feuille : Détail du Budget
+          // ------------------------------------------
+          const budgetRows = [
+            ["DÉTAIL DE L'ESTIMATION DU BUDGET PRÉVISIONNEL", ""],
+            ["", ""],
+            ["Poste de dépense", "Estimation & Recommandations"],
+            ["Budget Total Estimé (par personne)", budget.totalPerPerson],
+            ["Vols & Transports principaux aller-retour", budget.flights],
+            ["Hébergements & Nuitées", budget.accommodation],
+            ["Restauration & Gastronomie", budget.food],
+            ["Visites, Monuments & Activités", budget.activities],
+            ["Transports locaux, pass & transferts", budget.localTransport],
+            ["", ""],
+            ["Astuce & Optimisation budgétaire", budget.tipsAndAdvice]
+          ];
+
+          const wsBudget = XLSX.utils.aoa_to_sheet(budgetRows);
+          wsBudget['!cols'] = [{ wch: 38 }, { wch: 75 }];
+          XLSX.utils.book_append_sheet(wb, wsBudget, "Détail Budget");
+
+          // Génération et téléchargement
+          const safeTitle = (tripData.title || 'optitrip').replace(/[^a-zA-Z0-9_\u00C0-\u017F]/g, '_').substring(0, 35);
+          const fileName = `${safeTitle}_${duration}Jours.xlsx`;
+          XLSX.writeFile(wb, fileName);
+          showToast(`Fichier Excel exporté avec succès (${fileName}) !`);
+        } catch (err) {
+          console.error("Erreur lors de l'export Excel:", err);
+          showToast("Erreur lors de la création du fichier Excel. Téléchargement CSV en cours...", true);
+          exportTripToCsv(tripData);
+        }
+      }
+
+      function exportAllSavedTripsToExcel() {
+        const trips = getSavedTrips();
+        if (trips.length === 0) {
+          showToast("Aucun voyage sauvegardé à exporter.", true);
+          return;
+        }
+
+        if (typeof XLSX === 'undefined') {
+          exportAllSavedTrips();
+          return;
+        }
+
+        try {
+          const wb = XLSX.utils.book_new();
+
+          // Feuille Récapitulative
+          const summaryRows = [
+            ["MES VOYAGES ENREGISTRÉS - OPTITRIP", "", "", "", "", ""],
+            ["", "", "", "", "", ""],
+            ["Titre du voyage", "Ville de départ", "Destination(s)", "Durée", "Budget estimé", "Date de sauvegarde"]
+          ];
+
+          trips.forEach((t) => {
+            const destStr = Array.isArray(t.destinations) ? t.destinations.join(', ') : (t.destinations || '');
+            const savedDate = t.savedAt ? new Date(t.savedAt).toLocaleDateString('fr-FR') : '';
+            summaryRows.push([
+              t.title || "Voyage",
+              t.departureCity || "",
+              destStr,
+              `${t.durationDays || (t.itinerary ? t.itinerary.length : '')} jours`,
+              t.budgetEstimate || "",
+              savedDate
+            ]);
+          });
+
+          const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+          wsSummary['!cols'] = [{ wch: 32 }, { wch: 20 }, { wch: 25 }, { wch: 12 }, { wch: 18 }, { wch: 18 }];
+          XLSX.utils.book_append_sheet(wb, wsSummary, "Tous les voyages");
+
+          // Ajouter les 5 voyages les plus récents comme feuilles individuelles
+          trips.slice(0, 5).forEach((t, idx) => {
+            const sheetTitle = (t.title || `Voyage ${idx + 1}`).replace(/[\\\/\?\*\[\]]/g, '').substring(0, 25);
+            const itineraryRows = [
+              ["Jour", "Titre de l'étape", "Lieu", "Matin", "Midi", "Après-midi", "Soir"]
+            ];
+            if (Array.isArray(t.itinerary)) {
+              t.itinerary.forEach((d, dIdx) => {
+                const segs = parseDaySegments(d);
+                itineraryRows.push([
+                  `Jour ${d.day || (dIdx + 1)}`,
+                  d.title || "",
+                  d.locationName || "",
+                  segs.morning || "",
+                  segs.lunch || "",
+                  segs.afternoon || "",
+                  segs.evening || ""
+                ]);
+              });
+            }
+            const wsTrip = XLSX.utils.aoa_to_sheet(itineraryRows);
+            XLSX.utils.book_append_sheet(wb, wsTrip, sheetTitle);
+          });
+
+          const fileName = `Optitrip_Tous_Les_Voyages_${new Date().toISOString().slice(0, 10)}.xlsx`;
+          XLSX.writeFile(wb, fileName);
+          showToast(`Export Excel des ${trips.length} voyage(s) terminé !`);
+        } catch (err) {
+          console.error("Erreur export multi-voyages Excel:", err);
+          exportAllSavedTrips();
+        }
+      }
+
+      function exportTripToCsv(tripData) {
+        if (!tripData || !Array.isArray(tripData.itinerary)) return;
+        const totalDays = tripData.itinerary.length;
+        let csvContent = "\uFEFFJour;Statut;Titre;Lieu;Matin;Midi;Après-midi;Soir;Latitude;Longitude\n";
+
+        tripData.itinerary.forEach((dayItem, idx) => {
+          const dayNum = dayItem.day || (idx + 1);
+          const isLastDay = dayNum === totalDays;
+          const status = isLastDay ? "Retour au domicile" : "Exploration";
+          const segs = parseDaySegments(dayItem);
+          const coords = dayItem.coordinates || {};
+
+          const row = [
+            `Jour ${dayNum}`,
+            status,
+            dayItem.title || '',
+            dayItem.locationName || '',
+            segs.morning || '',
+            segs.lunch || '',
+            segs.afternoon || '',
+            segs.evening || '',
+            coords.lat || '',
+            coords.lng || ''
+          ].map(field => `"${String(field).replace(/"/g, '""')}"`);
+
+          csvContent += row.join(';') + '\n';
+        });
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const safeTitle = (tripData.title || 'optitrip').replace(/[^a-zA-Z0-9_\u00C0-\u017F]/g, '_').substring(0, 30);
+        a.download = `${safeTitle}_Itineraire.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showToast("Itinéraire exporté avec succès (format CSV Excel) !");
+      }
+
+      // ==========================================
+      // TOAST NOTIFICATIONS
+      // ==========================================
+      function showToast(message, isError = false) {
+        let toast = document.getElementById('optiToast');
+        if (!toast) {
+          toast = document.createElement('div');
+          toast.id = 'optiToast';
+          toast.className = 'fixed bottom-6 right-6 z-50 px-4 py-3 rounded-xl shadow-2xl text-xs font-semibold flex items-center gap-2.5 transition-all duration-300 transform translate-y-4 opacity-0 pointer-events-none';
+          document.body.appendChild(toast);
+        }
+
+        toast.className = isError
+          ? 'fixed bottom-6 right-6 z-50 px-4 py-3 rounded-xl shadow-2xl text-xs font-semibold flex items-center gap-2.5 transition-all duration-300 bg-red-950 border border-red-800 text-red-200 opacity-100 translate-y-0'
+          : 'fixed bottom-6 right-6 z-50 px-4 py-3 rounded-xl shadow-2xl text-xs font-semibold flex items-center gap-2.5 transition-all duration-300 bg-emerald-950 border border-emerald-800 text-emerald-200 opacity-100 translate-y-0';
+        
+        toast.innerHTML = `
+          <i data-lucide="${isError ? 'alert-circle' : 'check-circle-2'}" class="w-4 h-4 shrink-0 text-${isError ? 'red' : 'emerald'}-400"></i>
+          <span>${escapeHtml(message)}</span>
+        `;
+        lucide.createIcons();
+
+        setTimeout(() => {
+          toast.className = toast.className.replace('opacity-100 translate-y-0', 'opacity-0 translate-y-4 pointer-events-none');
+        }, 3500);
+      }
+
+      // Tab Switcher
+      function switchTab(tabName) {
+        const tabItinerary = document.getElementById('tabContentItinerary');
+        const tabFlights = document.getElementById('tabContentFlights');
+        const tabMap = document.getElementById('tabContentMap');
+
+        const btnItinerary = document.getElementById('tabBtnItinerary');
+        const btnFlights = document.getElementById('tabBtnFlights');
+        const btnMap = document.getElementById('tabBtnMap');
+
+        // Reset tab styles
+        const activeClasses = ['border-sky-400', 'text-sky-400'];
+        const inactiveClasses = ['border-transparent', 'text-slate-400'];
+
+        [btnItinerary, btnFlights, btnMap].forEach(b => {
+          b.classList.remove(...activeClasses);
+          b.classList.add(...inactiveClasses);
+        });
+
+        tabItinerary.classList.add('hidden');
+        tabFlights.classList.add('hidden');
+        tabMap.classList.add('hidden');
+
+        if (tabName === 'itinerary') {
+          tabItinerary.classList.remove('hidden');
+          btnItinerary.classList.add(...activeClasses);
+          btnItinerary.classList.remove(...inactiveClasses);
+        } else if (tabName === 'flights') {
+          tabFlights.classList.remove('hidden');
+          btnFlights.classList.add(...activeClasses);
+          btnFlights.classList.remove(...inactiveClasses);
+        } else if (tabName === 'map') {
+          tabMap.classList.remove('hidden');
+          btnMap.classList.add(...activeClasses);
+          btnMap.classList.remove(...inactiveClasses);
+
+          // Force MapLibre resize strictly after 250ms when switching to map tab
+          setTimeout(() => {
+            if (mapInstance) {
+              mapInstance.resize();
+              resetMapBounds();
+            }
+          }, 250);
+        }
+
+        lucide.createIcons();
+      }
+
+      // MapLibre GL JS Management
+      function setupMap(itinerary) {
+        const mapContainer = document.getElementById('map');
+        if (!mapContainer) return;
+
+        // Clean previous markers
+        mapMarkers.forEach(m => m.remove());
+        mapMarkers = [];
+
+        // If map does not exist, initialize it
+        if (!mapInstance) {
+          mapInstance = new maplibregl.Map({
+            container: 'map',
+            style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+            center: [2.3522, 48.8566],
+            zoom: 2,
+            attributionControl: true
+          });
+
+          // Add navigation controls
+          mapInstance.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right');
+        }
+
+        // Wait for map load event if not already loaded
+        if (mapInstance.loaded()) {
+          renderMapMarkersAndBounds(itinerary);
+        } else {
+          mapInstance.on('load', () => {
+            renderMapMarkersAndBounds(itinerary);
+          });
+        }
+      }
+
+      function renderMapMarkersAndBounds(itinerary) {
+        if (!mapInstance || !itinerary) return;
+
+        const bounds = new maplibregl.LngLatBounds();
+        let validCoordsCount = 0;
+
+        itinerary.forEach((dayItem, index) => {
+          const coords = dayItem.coordinates;
+          if (coords && typeof coords.lat === 'number' && typeof coords.lng === 'number' && (coords.lat !== 0 || coords.lng !== 0)) {
+            validCoordsCount++;
+            bounds.extend([coords.lng, coords.lat]);
+
+            // Custom Marker DOM element
+            const el = document.createElement('div');
+            el.className = 'custom-marker flex items-center justify-center w-8 h-8 rounded-full bg-slate-900 border-2 border-sky-400 text-sky-400 font-bold text-xs shadow-lg shadow-sky-500/30';
+            el.innerHTML = `<span>${dayItem.day || index + 1}</span>`;
+
+            const popupContent = `
+              <div class="space-y-1">
+                <span class="text-xs font-bold text-sky-400 uppercase tracking-wider">Jour ${dayItem.day || index + 1}</span>
+                <h4 class="font-bold text-white text-sm">${escapeHtml(dayItem.locationName || '')}</h4>
+                <p class="text-xs text-slate-300 leading-snug line-clamp-2">${escapeHtml(dayItem.title || '')}</p>
+              </div>
+            `;
+
+            const popup = new maplibregl.Popup({ offset: 15, closeButton: true })
+              .setHTML(popupContent);
+
+            const marker = new maplibregl.Marker({ element: el })
+              .setLngLat([coords.lng, coords.lat])
+              .setPopup(popup)
+              .addTo(mapInstance);
+
+            mapMarkers.push(marker);
+          }
+        });
+
+        if (validCoordsCount > 1) {
+          mapInstance.fitBounds(bounds, { padding: 60, maxZoom: 14 });
+        } else if (validCoordsCount === 1) {
+          const center = bounds.getCenter();
+          mapInstance.setCenter(center);
+          mapInstance.setZoom(11);
+        }
+      }
+
+      function resetMapBounds() {
+        if (!mapInstance || !currentTripData || !currentTripData.itinerary) return;
+        const bounds = new maplibregl.LngLatBounds();
+        let count = 0;
+        currentTripData.itinerary.forEach(d => {
+          if (d.coordinates && typeof d.coordinates.lat === 'number') {
+            bounds.extend([d.coordinates.lng, d.coordinates.lat]);
+            count++;
+          }
+        });
+        if (count > 1) {
+          mapInstance.fitBounds(bounds, { padding: 60, maxZoom: 14 });
+        } else if (count === 1) {
+          mapInstance.setCenter(bounds.getCenter());
+          mapInstance.setZoom(11);
+        }
+      }
+
+      function zoomToDayOnMap(dayNum, lat, lng, locationName) {
+        switchTab('map');
+        setTimeout(() => {
+          if (mapInstance) {
+            mapInstance.resize();
+            mapInstance.flyTo({
+              center: [lng, lat],
+              zoom: 13,
+              speed: 1.4
+            });
+
+            // Open corresponding popup
+            const marker = mapMarkers.find(m => {
+              const pos = m.getLngLat();
+              return Math.abs(pos.lat - lat) < 0.0001 && Math.abs(pos.lng - lng) < 0.0001;
+            });
+            if (marker) {
+              marker.togglePopup();
+            }
+          }
+        }, 300);
+      }
+
+      // Safe HTML escaping
+      function escapeHtml(str) {
+        if (!str) return '';
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      }
+
+      function escapeAttr(str) {
+        if (!str) return '';
+        return String(str).replace(/'/g, "\\'").replace(/"/g, '&quot;');
+      }
+    </script>
+  </body>
+</html>

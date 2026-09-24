@@ -1,0 +1,6 @@
+{
+  "name": "Optitrip — Planificateur de Voyage IA Sur Mesure",
+  "description": "Créez votre itinéraire de voyage personnalisé en quelques secondes grâce à l'IA Gemini.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
